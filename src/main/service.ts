@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { app, dialog, type BrowserWindow } from "electron";
 import type { CommitRequest, CommitResult, PlanRequest, PrepareRequest, Snapshot } from "../../shared/api";
-import { CATALOG_PATH, LEGACY_CATALOG_PATH, canCompleteFeature, canCompleteTask, emptyCatalog, findFeature, findTask, parseCatalog, serializeCatalog, setFeatureStatus, setSubtaskStatus, setTaskStatus, type Catalog } from "../../shared/catalog";
+import { CATALOG_PATH, FEATURES_DIR, LEGACY_CATALOG_PATH, canCompleteFeature, canCompleteTask, catalogFromFeatures, emptyCatalog, findFeature, findTask, parseCatalog, parseFeatureFile, serializeFeature, setFeatureStatus, setSubtaskStatus, setTaskStatus, type Catalog } from "../../shared/catalog";
 import { completionCommitMessage, prepareCommit } from "../../shared/commit-message";
 import { groupByFeature, parseGitLog } from "../../shared/log";
 import {
@@ -138,15 +138,43 @@ async function readGitUser(repoPath: string): Promise<string> {
 
 async function readCatalog(repoPath: string): Promise<Snapshot["catalog"]> {
   try {
+    const names = await listFeatureFiles(repoPath);
+    if (names.length > 0) {
+      const features = [];
+      for (const name of names) {
+        const text = await fs.readFile(featureFilePath(repoPath, name), "utf8");
+        features.push(parseFeatureFile(text, name));
+      }
+      return { exists: true, path: FEATURES_DIR, data: catalogFromFeatures(features), error: "" };
+    }
     const found = await readRepoFile(repoPath, CATALOG_PATH, LEGACY_CATALOG_PATH);
     if (!found) {
-      return { exists: false, path: CATALOG_PATH, data: emptyCatalog(), error: "" };
+      return { exists: false, path: FEATURES_DIR, data: emptyCatalog(), error: "" };
     }
     return { exists: true, path: found.path, data: parseCatalog(found.text), error: "" };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "gfm/release/catalog.json could not be read.";
-    return { exists: true, path: CATALOG_PATH, data: emptyCatalog(), error: message };
+    const message = error instanceof Error ? error.message : "gfm/release/features could not be read.";
+    return { exists: true, path: FEATURES_DIR, data: emptyCatalog(), error: message };
   }
+}
+
+async function listFeatureFiles(repoPath: string): Promise<string[]> {
+  try {
+    const entries = await fs.readdir(path.join(repoPath, ...FEATURES_DIR.split("/")), { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".json"))
+      .map((entry) => entry.name)
+      .sort();
+  } catch (error) {
+    if (isEnoent(error)) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+function featureFilePath(repoPath: string, name: string): string {
+  return path.join(repoPath, ...FEATURES_DIR.split("/"), name);
 }
 
 function assertSafePath(filePath: string): void {
@@ -168,7 +196,7 @@ function emptySnapshot(git: { available: boolean; version: string }, error = "")
     branch: "",
     hookInstalled: false,
     manifest: { exists: false, path: MANIFEST_PATH, data: defaultManifest() },
-    catalog: { exists: false, path: CATALOG_PATH, data: emptyCatalog(), error: "" },
+    catalog: { exists: false, path: FEATURES_DIR, data: emptyCatalog(), error: "" },
     changes: [],
     features: [],
     error: error || (git.available ? "" : "Git is not available on PATH.")
@@ -279,11 +307,57 @@ export async function saveCatalog(catalog: Catalog): Promise<Snapshot> {
     throw new Error("Choose a repository first.");
   }
   const validated = parseCatalog(JSON.stringify(catalog));
-  const fullPath = path.join(current.repoPath, ...CATALOG_PATH.split("/"));
-  await fs.mkdir(path.dirname(fullPath), { recursive: true });
-  await fs.writeFile(fullPath, serializeCatalog(validated));
-  await runGit(current.repoPath, ["add", "--", CATALOG_PATH]);
+  const dir = path.join(current.repoPath, ...FEATURES_DIR.split("/"));
+  await fs.mkdir(dir, { recursive: true });
+  const existing = new Set(await listFeatureFiles(current.repoPath));
+  const wanted = new Map(validated.features.map((feature) => [`${feature.id}.json`, serializeFeature(feature)]));
+  for (const [name, text] of wanted) {
+    const fullPath = featureFilePath(current.repoPath, name);
+    let previous = "";
+    try {
+      previous = await fs.readFile(fullPath, "utf8");
+    } catch (error) {
+      if (!isEnoent(error)) {
+        throw error;
+      }
+    }
+    if (previous !== text) {
+      await replaceFile(fullPath, text);
+    }
+  }
+  for (const name of existing) {
+    if (!wanted.has(name)) {
+      await fs.rm(featureFilePath(current.repoPath, name), { force: true });
+    }
+  }
+  const removed = [];
+  for (const relative of [CATALOG_PATH, LEGACY_CATALOG_PATH]) {
+    try {
+      await fs.rm(path.join(current.repoPath, ...relative.split("/")));
+      removed.push(relative);
+    } catch (error) {
+      if (!isEnoent(error)) {
+        throw error;
+      }
+    }
+  }
+  await runGit(current.repoPath, ["add", "-A", "--", FEATURES_DIR, ...removed]);
   return snapshot();
+}
+
+async function replaceFile(fullPath: string, text: string): Promise<void> {
+  const temporary = `${fullPath}.${process.pid}.tmp`;
+  await fs.writeFile(temporary, text);
+  try {
+    await fs.rename(temporary, fullPath);
+  } catch (error) {
+    if (!existsSync(fullPath)) {
+      await fs.rm(temporary, { force: true });
+      throw error;
+    }
+    await fs.rm(fullPath, { force: true });
+    await fs.rename(temporary, fullPath);
+  }
 }
 
 export async function setStaged(paths: string[], staged: boolean): Promise<Snapshot> {

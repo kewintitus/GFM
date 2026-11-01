@@ -23,7 +23,7 @@ Do this once in the repository the team works in, not in the GFM source reposito
 1. Install [Git](https://git-scm.com/) and make sure `git` works in a terminal.
 2. Open GFM and choose that repository.
 3. Open **Environments**. Set the four long-lived branches and save. The defaults are `dev`, `qas`, `uat`, and `main`. Saving writes `gfm/release/environments.json`.
-4. Open **Catalog**. Create a feature, then a task under it, then a subtask under that task. Saving writes `gfm/release/catalog.json`.
+4. Open **Catalog**. Create a feature, then a task under it, then a subtask under that task. Saving writes one file per feature under `gfm/release/features/`, such as `gfm/release/features/F-7C9E2A1B4D.json`. Tasks and subtasks live in that feature file.
 5. Commit those two files and push them. Teammates need the same copies. Do not ignore the `gfm` folder.
 6. On **Commit**, choose **Install** on the hook row. The hook rejects a commit that has no `Feature`, `Task`, and `Subtask` trailers, including commits made outside GFM. **Remove** deletes only the GFM hook.
 
@@ -33,7 +33,7 @@ New items get a random id such as `F-7C9E2A1B4D`. Older numeric ids such as `F-3
 
 Switch the role to **Contributor**.
 
-1. Check out the branch you want to commit on. To start a subtask branch from **Catalog**, leave **Create a branch** checked. The branch name looks like `work/dev/F-7C9E2A1B4D/T-A374407A87/ST-6076324777-aws-init`. The base defaults to the branch you are already on, which is the right choice when `gfm/release/catalog.json` is already modified. Choosing a different base while the tree is dirty is refused.
+1. Check out the branch you want to commit on. To start a subtask branch from **Catalog**, leave **Create a branch** checked. The branch name looks like `work/dev/F-7C9E2A1B4D/T-A374407A87/ST-6076324777-aws-init`. The base defaults to the branch you are already on, which is the right choice when a feature file under `gfm/release/features/` is already modified. Choosing a different base while the tree is dirty is refused.
 2. On **Commit**, stage the files, choose the feature, task, and subtask, and write a summary of at most 72 characters.
 3. Create the commit. The message looks like this:
 
@@ -66,7 +66,7 @@ A feature with no `Feature` trailer is **Unscoped** and cannot be promoted.
 
 ## Follow these rules
 
-- Share `gfm/release/catalog.json` and `gfm/release/environments.json`. They are the team record.
+- Share `gfm/release/features/` and `gfm/release/environments.json`. They are the team record. Each feature is its own file, so two people can edit different features without a catalog conflict.
 - One subtask should have one work branch. The branch name carries the ids so two people can see who owns the work.
 - Do not create a branch whose path starts with an existing branch. `dev/feature` cannot exist while a branch named `dev` exists. The `work/` prefix avoids that.
 - Keep the hook installed on machines that commit to this repository.
@@ -96,7 +96,7 @@ The version in those names comes from `package.json`.
 | `src/renderer` | The screens. |
 | `shared` | Catalog, commit messages, promotion rules, and tests. |
 | `hooks/commit-msg.disabled` | Hook template copied into a product repository on Install. |
-| `gfm/release` | Created in the product repository, not in this one. |
+| `gfm/release` | Created in the product repository, not in this one. Features are `gfm/release/features/<id>.json`. |
 
 ## License
 

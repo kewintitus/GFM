@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { addFeature, addSubtask, addTask, canCompleteFeature, canCompleteTask, compareItemsDescending, emptyCatalog, parseCatalog, setFeatureActive, setSubtaskStatus, subtaskProgress, taskProgress } from "./catalog";
+import { addFeature, addSubtask, addTask, canCompleteFeature, canCompleteTask, catalogFromFeatures, compareItemsDescending, emptyCatalog, parseCatalog, parseFeatureFile, serializeFeature, setFeatureActive, setSubtaskStatus, subtaskProgress, taskProgress } from "./catalog";
 import { isTicket } from "./ticket";
 import { completionCommitMessage, prepareCommit } from "./commit-message";
 import { groupByFeature, parseGitLog } from "./log";
@@ -274,6 +274,34 @@ test("stamped rows sort ahead of numeric ids, newest first", () => {
     "F-9",
     "F-1"
   ]);
+});
+
+test("a feature file round-trips and a folder assembles into one catalog", () => {
+  const parsed = parseCatalog(JSON.stringify({
+    sequences: { F: 10, T: 4, ST: 8 },
+    features: [
+      { id: "F-1", name: "Older number" },
+      { id: "F-9", name: "Newer number" },
+      { id: "F-7C9E2A1B4D", name: "Earlier stamp", createdAt: "2026-01-01T00:00:00.000Z" },
+      { id: "F-AABBCCDDEE", name: "Later stamp", createdAt: "2026-06-01T00:00:00.000Z" }
+    ]
+  }));
+  const files = parsed.features.map((feature) => ({
+    name: `${feature.id}.json`,
+    text: serializeFeature(feature)
+  }));
+  const loaded = files.map((file) => parseFeatureFile(file.text, file.name));
+  expect(serializeFeature(loaded[0]!)).toBe(files[0]?.text);
+  expect(() => parseFeatureFile(files[0]!.text, "F-9.json")).toThrow(/must be named F-1.json/);
+  const assembled = catalogFromFeatures([loaded[2]!, loaded[0]!, loaded[3]!, loaded[1]!]);
+  expect(assembled.features.map((feature) => feature.id)).toEqual([
+    "F-AABBCCDDEE",
+    "F-7C9E2A1B4D",
+    "F-9",
+    "F-1"
+  ]);
+  expect(assembled.sequences).toEqual({ F: 10, T: 1, ST: 1 });
+  expect(() => catalogFromFeatures([loaded[0]!, loaded[0]!])).toThrow(/listed more than once/);
 });
 
 test("parseCatalog derives the next id when sequences are missing", () => {

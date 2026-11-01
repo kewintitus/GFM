@@ -2,6 +2,7 @@ import { isTicket, normalizeTicket } from "./ticket";
 
 export const CATALOG_PATH = "gfm/release/catalog.json";
 export const LEGACY_CATALOG_PATH = "release/catalog.json";
+export const FEATURES_DIR = "gfm/release/features";
 
 const DESCRIPTION_LIMIT = 400;
 
@@ -84,12 +85,41 @@ export function emptyCatalog(): Catalog {
 }
 
 export function serializeCatalog(catalog: Catalog): string {
-  return `${JSON.stringify(catalog, (key, value) => {
-    if ((key === "createdAt" || key === "updatedAt" || key === "createdBy" || key === "commitType" || key === "status") && value === "") {
-      return undefined;
+  return `${JSON.stringify(catalog, omitEmpty, 2)}\n`;
+}
+
+export function serializeFeature(feature: FeatureItem): string {
+  return `${JSON.stringify(feature, omitEmpty, 2)}\n`;
+}
+
+export function parseFeatureFile(text: string, fileName: string): FeatureItem {
+  const feature = readFeature(JSON.parse(text), new Set<string>());
+  const stem = fileName.replace(/\.json$/i, "");
+  if (normalizeTicket(stem) !== feature.id) {
+    throw new Error(`${fileName} must be named ${feature.id}.json.`);
+  }
+  return feature;
+}
+
+export function catalogFromFeatures(features: FeatureItem[]): Catalog {
+  const seen = new Set<string>();
+  for (const feature of features) {
+    for (const id of allIds({ sequences: { F: 1, T: 1, ST: 1 }, features: [feature] })) {
+      if (seen.has(id)) {
+        throw new Error(`${id} is listed more than once.`);
+      }
+      seen.add(id);
     }
-    return value;
-  }, 2)}\n`;
+  }
+  const sorted = [...features].sort(compareItemsDescending);
+  return { sequences: resolveSequences(undefined, sorted), features: sorted };
+}
+
+function omitEmpty(key: string, value: unknown): unknown {
+  if ((key === "createdAt" || key === "updatedAt" || key === "createdBy" || key === "commitType" || key === "status") && value === "") {
+    return undefined;
+  }
+  return value;
 }
 
 export function parseCatalog(text: string): Catalog {
