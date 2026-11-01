@@ -1,0 +1,31 @@
+appId: com.gfm.desktop
+productName: Git Feature Manager
+directories:
+  output: dist
+files:
+  - out/**/*
+  - package.json
+  - from: .pack/hooks
+    to: hooks
+    filter:
+      - commit-msg
+asar: true
+win:
+  signAndEditExecutable: false
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Git Feature Manager
+  artifactName: ${productName} Setup ${version}.${ext}
+portable:
+  artifactName: ${productName} ${version}.${ext}

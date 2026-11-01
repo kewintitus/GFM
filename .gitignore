@@ -1,9 +1,10 @@
 # dependencies
 node_modules/
 
-# electron-vite build
+# electron-vite build and packaged apps
 out/
 dist/
+.pack/
 
 # caches and logs
 .vite/

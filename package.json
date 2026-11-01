@@ -10,6 +10,7 @@
     "start": "electron-vite dev --watch",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
+    "dist:win": "electron-vite build && node scripts/stage-hook.mjs && electron-builder --win --x64",
     "test": "vitest run"
   },
   "devDependencies": {
@@ -20,6 +21,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "electron": "^37.2.0",
+    "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
