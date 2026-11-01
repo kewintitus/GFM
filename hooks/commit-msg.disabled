@@ -1,0 +1,25 @@
+#!/bin/sh
+# feature-release-hook
+# Reject commits that do not name a feature, task, and subtask.
+# A prepared merge or squash may omit Task and Subtask when it carries Feature and Prepared: merge or Prepared: squash.
+# Example trailer lines: Feature: F-1 / Task: T-1 / Subtask: ST-1
+
+msg_file=$1
+ticket='[A-Za-z][A-Za-z0-9]*-[A-Za-z0-9]+'
+
+feature=$(grep -Eq "^Feature:[[:space:]]*${ticket}[[:space:]]*$" "$msg_file" && echo yes)
+task=$(grep -Eq "^Task:[[:space:]]*${ticket}[[:space:]]*$" "$msg_file" && echo yes)
+subtask=$(grep -Eq "^Subtask:[[:space:]]*${ticket}[[:space:]]*$" "$msg_file" && echo yes)
+prepared=$(grep -Eq "^Prepared:[[:space:]]*(squash|merge)[[:space:]]*$" "$msg_file" && echo yes)
+
+if [ "$feature" = yes ] && [ "$prepared" = yes ]; then
+  exit 0
+fi
+
+if [ "$feature" = yes ] && [ "$task" = yes ] && [ "$subtask" = yes ]; then
+  exit 0
+fi
+
+echo "feature-release: commit rejected." >&2
+echo "Add trailer lines: Feature: F-1, Task: T-1, and Subtask: ST-1" >&2
+exit 1

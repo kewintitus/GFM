@@ -1,0 +1,33 @@
+{
+  "name": "git-feature-manager",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Git Feature Manager (GFM), a desktop client for feature-scoped commits and environment promotion.",
+  "type": "module",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev --watch",
+    "start": "electron-vite dev --watch",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@fontsource-variable/instrument-sans": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^37.2.0",
+    "electron-vite": "^6.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  },
+  "dependencies": {
+    "@tanstack/react-table": "^9.3.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  }
+}
