@@ -2,6 +2,7 @@
   "name": "git-feature-manager",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Git Feature Manager (GFM), a desktop client for feature-scoped commits and environment promotion.",
   "type": "module",
   "main": "./out/main/index.js",
