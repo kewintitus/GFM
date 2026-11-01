@@ -79,3 +79,11 @@ export function IconClose() {
     </svg>
   );
 }
+
+export function IconSidebar() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M10 3.5 5.5 8 10 12.5" />
+    </svg>
+  );
+}

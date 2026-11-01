@@ -1,6 +1,8 @@
+import { useState } from "react";
 import type { ReactElement } from "react";
-import { IconCatalog, IconCommit, IconEnvironments, IconFeatures, IconFolder, IconPromote, IconRefresh, Mark } from "./icons";
+import { IconCatalog, IconCommit, IconEnvironments, IconFeatures, IconFolder, IconPromote, IconRefresh, IconSidebar, Mark } from "./icons";
 import { useWorkspace, type View } from "./workspace";
+import { applyTheme, readTheme, type ThemeName } from "./theme";
 import { CatalogView } from "./views/CatalogView";
 import { CommitView } from "./views/CommitView";
 import { EnvironmentsView } from "./views/EnvironmentsView";
@@ -15,14 +17,25 @@ const NAV: { id: View; label: string; icon: ReactElement }[] = [
   { id: "promote", label: "Promote", icon: <IconPromote /> }
 ];
 
+const SIDEBAR_KEY = "gfm-sidebar";
+
 export function App() {
   const workspace = useWorkspace();
   const { snapshot, view, busy, notice, error, dismissToast } = workspace;
   const repoReady = Boolean(snapshot?.gitAvailable && snapshot.repoPath);
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_KEY) === "collapsed");
+
+  const toggleSidebar = () => {
+    setCollapsed((current) => {
+      const next = !current;
+      localStorage.setItem(SIDEBAR_KEY, next ? "collapsed" : "open");
+      return next;
+    });
+  };
 
   return (
-    <div className="shell" data-app="feature-release">
-      <Sidebar />
+    <div className={collapsed ? "shell is-collapsed" : "shell"} data-app="feature-release">
+      <Sidebar collapsed={collapsed} onToggle={toggleSidebar} />
       <div className="workspace">
         {busy ? <div className="busy-bar" /> : null}
         <Topbar />
@@ -51,13 +64,22 @@ export function App() {
   );
 }
 
-function Sidebar() {
+function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const { role, view, setRole, setView, snapshot } = useWorkspace();
   const tagged = snapshot?.features.filter((feature) => feature.id).length ?? 0;
   const defined = snapshot?.catalog?.data.features.length ?? 0;
 
   return (
     <aside className="sidebar">
+      <button
+        type="button"
+        className="sidebar-toggle"
+        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        aria-expanded={!collapsed}
+        onClick={onToggle}
+      >
+        <IconSidebar />
+      </button>
       <div className="brand">
         <Mark />
         <div className="brand-copy">
@@ -70,6 +92,7 @@ function Sidebar() {
           <button
             key={item.id}
             type="button"
+            title={item.label}
             aria-current={view === item.id ? "page" : undefined}
             onClick={() => setView(item.id)}
           >
@@ -82,10 +105,10 @@ function Sidebar() {
       </nav>
       <div className="role">
         <span className="eyebrow">Role</span>
-        <button type="button" aria-pressed={role === "contributor"} onClick={() => setRole("contributor")}>
+        <button type="button" title="Contributor" aria-pressed={role === "contributor"} onClick={() => setRole("contributor")}>
           Contributor
         </button>
-        <button type="button" aria-pressed={role === "release"} onClick={() => setRole("release")}>
+        <button type="button" title="Release manager" aria-pressed={role === "release"} onClick={() => setRole("release")}>
           Release manager
         </button>
         <p>Directory sign-in will replace this switch.</p>
@@ -97,6 +120,12 @@ function Sidebar() {
 function Topbar() {
   const { snapshot, busy, chooseRepo, refresh } = useWorkspace();
   const repo = snapshot?.repoPath ? splitRepo(snapshot.repoPath) : null;
+  const [theme, setTheme] = useState<ThemeName>(readTheme);
+
+  const chooseTheme = (next: ThemeName) => {
+    setTheme(next);
+    applyTheme(next);
+  };
 
   return (
     <header className="topbar">
@@ -115,6 +144,10 @@ function Topbar() {
         )}
         {snapshot?.branch ? <em>{snapshot.branch}</em> : null}
       </button>
+      <div className="theme-toggle" role="group" aria-label="Color theme">
+        <button type="button" aria-pressed={theme === "light"} onClick={() => chooseTheme("light")}>Light</button>
+        <button type="button" aria-pressed={theme === "dark"} onClick={() => chooseTheme("dark")}>Dark</button>
+      </div>
       <button
         type="button"
         className="ghost refresh"

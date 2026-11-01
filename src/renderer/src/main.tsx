@@ -4,8 +4,11 @@ import "@fontsource/jetbrains-mono/500.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./shell";
+import { applyTheme, readTheme } from "./theme";
 import { WorkspaceProvider } from "./workspace";
 import "./styles.css";
+
+applyTheme(readTheme());
 
 const root = document.querySelector("#root");
 if (!root) {
