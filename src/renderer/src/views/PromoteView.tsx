@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { findFeature } from "@shared/catalog";
 import { ENV_RAIL, branchNames, type EnvironmentName } from "@shared/manifest";
 import type { PromotionPlan } from "@shared/plan";
 import { defaultPrepareMode, type PrepareMode } from "@shared/promote";
@@ -28,6 +29,7 @@ export function PromoteView() {
   }, [target]);
 
   const selected = tagged.find((feature) => feature.id === featureId);
+  const selectedCatalog = selected?.id && snapshot ? findFeature(snapshot.catalog.data, selected.id) : undefined;
   const readyPlan = plan && plan.ok && plan.featureId === featureId && plan.target === target ? plan : null;
   const prepared = featureId ? snapshot?.manifest.data.prepared[target]?.[featureId.toUpperCase()] : undefined;
 
@@ -48,14 +50,25 @@ export function PromoteView() {
               value={featureId}
               disabled={!releaseManager || busy || tagged.length === 0}
               placeholder={tagged.length === 0 ? "No tagged features" : "Select a feature"}
-              options={tagged.flatMap((feature) => feature.id ? [{ value: feature.id, label: `${feature.label} · ${feature.commits.length}` }] : [])}
+              options={tagged.flatMap((feature) => {
+                if (!feature.id) {
+                  return [];
+                }
+                const name = snapshot ? findFeature(snapshot.catalog.data, feature.id)?.name : "";
+                const count = feature.commits.length === 1 ? "1 commit" : `${feature.commits.length} commits`;
+                return [{
+                  value: feature.id,
+                  label: name ? `${name} · ${feature.id}` : feature.id,
+                  hint: count
+                }];
+              })}
               onChange={(next) => {
                 setFeatureId(next);
                 setPlan(null);
               }}
             />
           </label>
-          {selected ? <p className="meta latest">{selected.latest?.subject}</p> : null}
+          {selectedCatalog?.description ? <p className="meta latest">{selectedCatalog.description}</p> : selected?.latest?.subject ? <p className="meta latest">{selected.latest.subject}</p> : null}
           <div className="target-grid" role="radiogroup" aria-label="Target environment">
             {ENV_RAIL.map((name) => {
               const branch = names?.[name] ?? name.toLowerCase();
@@ -156,6 +169,22 @@ export function PromoteView() {
 }
 
 function PlanBody({ plan }: { plan: Extract<PromotionPlan, { ok: true }> }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef(0);
+  const hashes = plan.pending.map((commit) => commit.sha).join(" ");
+
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  const copyHashes = async () => {
+    if (!hashes) {
+      return;
+    }
+    await copyText(hashes);
+    setCopied(true);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setCopied(false), 1600);
+  };
+
   return (
     <div className="plan-body">
       {plan.warnings.length > 0 ? (
@@ -166,19 +195,45 @@ function PlanBody({ plan }: { plan: Extract<PromotionPlan, { ok: true }> }) {
       {plan.pending.length === 0 ? (
         <p className="meta">Nothing new to move for {plan.featureId}.</p>
       ) : (
-        <ol className="plan-list">
-          {plan.pending.map((commit, index) => (
-            <li key={commit.sha}>
-              <span>{String(index + 1).padStart(2, "0")}</span>
-              <code>{commit.shortSha || commit.sha.slice(0, 7)}</code>
-              <em>{commit.subject || "Untitled commit"}</em>
-            </li>
-          ))}
-        </ol>
+        <>
+          <button
+            type="button"
+            className="ghost plan-copy"
+            title="Full hashes, oldest first, separated by spaces"
+            onClick={() => void copyHashes()}
+          >
+            {copied ? "Copied" : "Copy hashes"}
+          </button>
+          <ol className="plan-list">
+            {plan.pending.map((commit, index) => (
+              <li key={commit.sha}>
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <code>{commit.shortSha || commit.sha.slice(0, 7)}</code>
+                <em>{commit.subject || "Untitled commit"}</em>
+              </li>
+            ))}
+          </ol>
+        </>
       )}
       {plan.already.length > 0 ? (
         <p className="meta">{plan.already.length} already recorded on {plan.target}.</p>
       ) : null}
     </div>
   );
+}
+
+async function copyText(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.left = "-9999px";
+    document.body.append(area);
+    area.select();
+    document.execCommand("copy");
+    area.remove();
+  }
 }

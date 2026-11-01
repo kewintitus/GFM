@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { findFeature } from "@shared/catalog";
 import type { CommitRecord } from "@shared/log";
 import { EnvRail, ManifestCallout } from "../bits";
 import { useWorkspace } from "../workspace";
@@ -28,6 +29,7 @@ export function FeaturesView() {
           {features.map((feature) => {
             const key = feature.id ?? "unscoped";
             const open = openId === key;
+            const name = feature.id && snapshot ? findFeature(snapshot.catalog.data, feature.id)?.name : "";
             return (
               <article key={key} className={feature.id ? "feature" : "feature is-unscoped"}>
                 <button
@@ -37,8 +39,9 @@ export function FeaturesView() {
                   onClick={() => setOpenId(open ? null : key)}
                 >
                   <span>
-                    <strong>{feature.label}</strong>
+                    <strong>{name || feature.label}</strong>
                     <span className="meta">
+                      {name && feature.id ? `${feature.id} · ` : ""}
                       {feature.commits.length} {feature.commits.length === 1 ? "commit" : "commits"}
                       {feature.authors.length ? ` · ${feature.authors.join(", ")}` : ""}
                     </span>

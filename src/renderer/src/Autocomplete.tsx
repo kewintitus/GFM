@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState } from "react";
 export interface AutocompleteOption {
   value: string;
   label: string;
+  hint?: string;
 }
 
 interface AutocompleteProps {
@@ -37,7 +38,8 @@ export function Autocomplete({
     if (!needle) {
       return true;
     }
-    return option.label.toLowerCase().includes(needle) || option.value.toLowerCase().includes(needle);
+    const haystack = `${option.label} ${option.hint ?? ""} ${option.value}`.toLowerCase();
+    return haystack.includes(needle);
   });
 
   useEffect(() => {
@@ -122,12 +124,13 @@ export function Autocomplete({
                 type="button"
                 role="option"
                 aria-selected={option.value === value}
-                className={index === highlight ? "is-active" : undefined}
+                className={[index === highlight ? "is-active" : "", option.hint ? "has-hint" : ""].filter(Boolean).join(" ") || undefined}
                 onMouseDown={(event) => event.preventDefault()}
                 onMouseEnter={() => setHighlight(index)}
                 onClick={() => choose(option.value)}
               >
                 {option.label}
+                {option.hint ? <small>{option.hint}</small> : null}
               </button>
             </li>
           ))}

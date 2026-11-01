@@ -947,6 +947,20 @@ input[type="checkbox"] {
   text-align: left;
 }
 
+.combo-menu button.has-hint {
+  height: auto;
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  padding: 8px 10px;
+  line-height: 1.3;
+}
+
+.combo-menu button.has-hint small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .combo-menu button.is-active, .combo-menu button[aria-selected="true"] {
   background: var(--accent-soft);
 }
@@ -1288,6 +1302,14 @@ input[type="checkbox"] {
 .mode.on { border-color: var(--dev); box-shadow: inset 0 0 0 1px var(--dev); }
 
 .plan-body { display: grid; gap: 12px; padding: 16px; }
+
+.plan-copy {
+  justify-self: start;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
 
 .warnings li, .empty {
   padding: 12px 14px;
