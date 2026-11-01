@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { join } from "node:path";
-import { buildPlan, chooseRepo, createCommit, createManifest, createWorkBranch, installHook, listBranches, preparePromotion, saveCatalog, saveEnvironmentBranches, setStaged, snapshot } from "./service";
+import { buildPlan, chooseRepo, createCommit, createManifest, createWorkBranch, installHook, listBranches, preparePromotion, removeHook, saveCatalog, saveEnvironmentBranches, setStaged, snapshot } from "./service";
 import type { Catalog } from "../../shared/catalog";
 import type { CommitRequest, PlanRequest, PrepareRequest, WorkBranchRequest } from "../../shared/api";
 import type { BranchNames } from "../../shared/manifest";
@@ -97,6 +97,7 @@ app.whenReady().then(() => {
   handle("repo:choose", (event) => chooseRepo(parentFrom(event)));
   handle("manifest:create", () => createManifest());
   handle("hook:install", (event) => installHook(parentFrom(event)));
+  handle("hook:remove", (event) => removeHook(parentFrom(event)));
   handle<string[]>("stage:paths", (_event, paths) => setStaged(paths, true));
   handle<string[]>("unstage:paths", (_event, paths) => setStaged(paths, false));
   handle<CommitRequest>("commit:create", (_event, input) => createCommit(input));

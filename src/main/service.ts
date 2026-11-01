@@ -86,7 +86,9 @@ async function hookFile(repoPath: string): Promise<string> {
 function hookSourcePath(): string {
   const candidates = [
     path.join(app.getAppPath(), "hooks", "commit-msg"),
-    path.join(process.cwd(), "hooks", "commit-msg")
+    path.join(process.cwd(), "hooks", "commit-msg"),
+    path.join(app.getAppPath(), "hooks", "commit-msg.disabled"),
+    path.join(process.cwd(), "hooks", "commit-msg.disabled")
   ];
   const found = candidates.find((candidate) => existsSync(candidate));
   if (!found) {
@@ -344,6 +346,42 @@ export async function installHook(parent?: BrowserWindow): Promise<Snapshot | { 
   }
   await fs.mkdir(path.dirname(dest), { recursive: true });
   await fs.writeFile(dest, script, { mode: 0o755 });
+  return snapshot();
+}
+
+export async function removeHook(parent?: BrowserWindow): Promise<Snapshot | { ok: true; canceled: true }> {
+  const current = await snapshot();
+  if (!current.repoPath) {
+    throw new Error("Choose a repository first.");
+  }
+  const dest = await hookFile(current.repoPath);
+  let existing = "";
+  try {
+    existing = await fs.readFile(dest, "utf8");
+  } catch (error) {
+    if (isEnoent(error)) {
+      return snapshot();
+    }
+    throw error;
+  }
+  if (!existing.includes(HOOK_MARKER)) {
+    throw new Error("This repository has a different commit-msg hook. It was left in place.");
+  }
+  const message = {
+    type: "question" as const,
+    buttons: ["Remove", "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+    message: "Remove the commit hook?",
+    detail: "Commits made outside this app will no longer be checked for a Feature trailer."
+  };
+  const answer = parent
+    ? await dialog.showMessageBox(parent, message)
+    : await dialog.showMessageBox(message);
+  if (answer.response !== 0) {
+    return { ok: true, canceled: true };
+  }
+  await fs.rm(dest, { force: true });
   return snapshot();
 }
 

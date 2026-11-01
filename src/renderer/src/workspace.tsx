@@ -20,6 +20,7 @@ interface WorkspaceValue {
   refresh: () => Promise<void>;
   createManifest: () => Promise<void>;
   installHook: () => Promise<void>;
+  removeHook: () => Promise<void>;
   stagePaths: (paths: string[]) => Promise<void>;
   unstagePaths: (paths: string[]) => Promise<void>;
   commit: (input: CommitRequest) => Promise<boolean>;
@@ -159,6 +160,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
       apply(result);
       setNotice("Commit hook installed.");
+    }),
+    removeHook: () => run(async () => {
+      const result = await window.featureRelease!.removeHook();
+      if (!isSnapshot(result)) {
+        if ("error" in result) {
+          setError(result.error);
+        }
+        return;
+      }
+      apply(result);
+      setNotice("Commit hook removed.");
     }),
     stagePaths: (paths) => run(async () => {
       const result = await window.featureRelease!.stagePaths(paths);

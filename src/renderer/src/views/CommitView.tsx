@@ -25,7 +25,7 @@ function fieldErrors(errors: string[]): FieldErrors {
 }
 
 export function CommitView() {
-  const { snapshot, role, busy, installHook, commit, stagePaths, unstagePaths, setView } = useWorkspace();
+  const { snapshot, role, busy, installHook, removeHook, commit, stagePaths, unstagePaths, setView } = useWorkspace();
   const [type, setType] = useState<CommitType>("feat");
   const [summary, setSummary] = useState("");
   const [featureId, setFeatureId] = useState("");
@@ -121,7 +121,12 @@ export function CommitView() {
       {!contributor ? <p className="note">Switch to Contributor to create a commit.</p> : null}
       <div className="commit-layout">
         <div className="commit-form">
-          <HookRow installed={Boolean(snapshot?.hookInstalled)} busy={busy} onInstall={() => void installHook()} />
+          <HookRow
+            installed={Boolean(snapshot?.hookInstalled)}
+            busy={busy}
+            onInstall={() => void installHook()}
+            onRemove={() => void removeHook()}
+          />
           {features.length === 0 ? (
             <p className="note">
               {catalog.features.length === 0 ? "No features are defined yet. " : "Every subtask is completed. "}
@@ -256,15 +261,27 @@ function openTask(task: { active: boolean; subtasks: { active: boolean; status: 
   return task.active !== false && task.subtasks.some((item) => item.active !== false && item.status !== "completed");
 }
 
-function HookRow({ installed, busy, onInstall }: { installed: boolean; busy: boolean; onInstall: () => void }) {
+function HookRow({
+  installed,
+  busy,
+  onInstall,
+  onRemove
+}: {
+  installed: boolean;
+  busy: boolean;
+  onInstall: () => void;
+  onRemove: () => void;
+}) {
   return (
     <div className={installed ? "status-row is-ok" : "status-row"}>
       <span className="dot" />
       <div>
         <strong>{installed ? "Commit hook installed" : "Commit hook not installed"}</strong>
-        <p>{installed ? "Commits from other tools still need a Feature trailer." : "Install it so a commit made outside this app stays structured."}</p>
+        <p>{installed ? "Commits made outside this app are checked for a Feature, Task, and Subtask trailer." : "Install it so a commit made outside this app stays structured."}</p>
       </div>
-      {installed ? null : (
+      {installed ? (
+        <button type="button" className="ghost" disabled={busy} onClick={onRemove}>Remove</button>
+      ) : (
         <button type="button" className="ghost" disabled={busy} onClick={onInstall}>Install</button>
       )}
     </div>

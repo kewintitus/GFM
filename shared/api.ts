@@ -90,6 +90,7 @@ export interface FeatureReleaseApi {
   chooseRepo: () => Promise<Snapshot | Canceled | IpcFailure>;
   createManifest: () => Promise<Snapshot | IpcFailure>;
   installHook: () => Promise<Snapshot | Canceled | IpcFailure>;
+  removeHook: () => Promise<Snapshot | Canceled | IpcFailure>;
   stagePaths: (paths: string[]) => Promise<Snapshot | IpcFailure>;
   unstagePaths: (paths: string[]) => Promise<Snapshot | IpcFailure>;
   createCommit: (input: CommitRequest) => Promise<CommitResult>;

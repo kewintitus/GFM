@@ -8,6 +8,7 @@ const api: FeatureReleaseApi = {
   chooseRepo: () => ipcRenderer.invoke("repo:choose"),
   createManifest: () => ipcRenderer.invoke("manifest:create"),
   installHook: () => ipcRenderer.invoke("hook:install"),
+  removeHook: () => ipcRenderer.invoke("hook:remove"),
   stagePaths: (paths: string[]) => ipcRenderer.invoke("stage:paths", paths),
   unstagePaths: (paths: string[]) => ipcRenderer.invoke("unstage:paths", paths),
   createCommit: (input: CommitRequest) => ipcRenderer.invoke("commit:create", input),
