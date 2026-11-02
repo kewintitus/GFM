@@ -152,9 +152,8 @@ export function CatalogView() {
       accessorKey: "id",
       header: "Id",
       cell: ({ row }) => (
-        <span className="tree-id" style={{ paddingLeft: row.depth * 18 }}>
-          <em>{labelFor(row.original.kind)}</em>
-          <code>{row.original.id}</code>
+        <span className={`tree-id is-${row.original.kind}`} style={{ paddingLeft: row.depth * 18 }}>
+          <code title={labelFor(row.original.kind)}>{row.original.id}</code>
         </span>
       )
     },
@@ -167,7 +166,13 @@ export function CatalogView() {
     {
       accessorKey: "description",
       header: "Description",
-      cell: ({ getValue }) => <span className="desc">{String(getValue() || "—")}</span>
+      cell: ({ getValue }) => {
+        const text = String(getValue() || "").trim();
+        if (!text) {
+          return <span className="desc">—</span>;
+        }
+        return <span className="desc desc-clip" title={text}>{text}</span>;
+      }
     },
     {
       accessorKey: "createdBy",
@@ -426,6 +431,11 @@ export function CatalogView() {
         </div>
       </header>
       {catalogError ? <p className="note">{catalogError}</p> : null}
+      <ul className="kind-legend" aria-label="Id colors">
+        <li><i className="swatch is-feature" /> Feature</li>
+        <li><i className="swatch is-task" /> Task</li>
+        <li><i className="swatch is-subtask" /> Subtask</li>
+      </ul>
       <div className="table-wrap">
         <table className="feature-table">
           <thead>

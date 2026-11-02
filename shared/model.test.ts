@@ -5,7 +5,7 @@ import { completionCommitMessage, prepareCommit } from "./commit-message";
 import { groupByFeature, parseGitLog } from "./log";
 import { defaultManifest, environmentPresence, environmentsForFeature, parseManifest, recordPrepared, recordPromotion, withBranchNames } from "./manifest";
 import { planPromotion } from "./plan";
-import { commitInSelection, guardPreparation, mergeCommitMessage, promoteBranchName, promotionNodes, selectionBranchName, squashCommitMessage, toggleFeature, toggleSubtask, toggleTask, wholeFeatureSelection } from "./promote";
+import { commitInSelection, guardPreparation, mergeCommitMessage, promoteBranchName, promotionNodes, promotionRecordMessage, selectionBranchName, squashCommitMessage, toggleFeature, toggleSubtask, toggleTask, wholeFeatureSelection } from "./promote";
 import { branchRefPrefixes, sortBaseBranches, usesCurrentBranch, workBranchName } from "./work-branch";
 
 const catalog = parseCatalog(JSON.stringify({
@@ -691,6 +691,20 @@ test("squashCommitMessage marks the commit and lists each included commit", () =
   expect(message).not.toMatch(/^Subtask:/m);
   expect(message).toContain("- aaaaaaa T-1 ST-1 Setup");
   expect(message).toContain("- bbbbbbb T-1 ST-2 Wire the client");
+});
+
+test("promotionRecordMessage records the ledger without a task or subtask", () => {
+  const message = promotionRecordMessage("DEV", [
+    { sha: "aaaaaaaaaaaa", shortSha: "aaaaaaa", subject: "Setup", featureId: "f-2" },
+    { sha: "bbbbbbbbbbbb", shortSha: "bbbbbbb", subject: "Wire the client", featureId: "F-3" }
+  ]);
+  expect(message.startsWith("chore: record promotion on DEV\n")).toBe(true);
+  expect(message).toContain("Prepared: promoted\n");
+  expect(message).toContain("Feature: F-2\n");
+  expect(message).toContain("Feature: F-3\n");
+  expect(message).toContain("- aaaaaaa Setup");
+  expect(message).not.toMatch(/^Task:/m);
+  expect(message).not.toMatch(/^Subtask:/m);
 });
 
 test("mergeCommitMessage carries the feature and the merge marker", () => {

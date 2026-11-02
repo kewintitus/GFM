@@ -77,6 +77,7 @@ export interface PlanRequest {
   taskIds?: string[];
   subtaskIds?: string[];
   target?: EnvironmentName;
+  noVerify?: boolean;
 }
 
 export interface PrepareRequest {

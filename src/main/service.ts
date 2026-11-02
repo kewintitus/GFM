@@ -35,6 +35,7 @@ import {
   wholeFeatureSelection,
   mergeCommitMessage,
   squashCommitMessage,
+  promotionRecordMessage,
   type PromotionSelection
 } from "../../shared/promote";
 import { normalizeTicket } from "../../shared/ticket";
@@ -679,7 +680,18 @@ export async function markPromoted(input: PlanRequest): Promise<Snapshot> {
   if (!current.repoPath) {
     throw new Error("Choose a repository first.");
   }
-  await writeManifest(current.repoPath, recordPromotion(current.manifest.data, plan.target, plan.pending), false);
+  if (current.operation) {
+    throw new Error(`Finish or abort the current ${current.operation.kind} before recording the promotion.`);
+  }
+  const repoPath = current.repoPath;
+  const branch = current.branch;
+  await writeManifest(repoPath, recordPromotion(current.manifest.data, plan.target, plan.pending), false);
+  try {
+    await commitManifest(repoPath, promotionRecordMessage(plan.target, plan.pending), input.noVerify === true);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Git failed.";
+    throw new Error(`The ledger was saved on ${branch}. The commit failed. ${message}`);
+  }
   return snapshot();
 }
 
@@ -1077,6 +1089,22 @@ async function conflictFiles(repoPath: string): Promise<string[]> {
     return raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   } catch {
     return [];
+  }
+}
+
+async function commitManifest(repoPath: string, message: string, noVerify: boolean): Promise<void> {
+  const file = path.join(os.tmpdir(), `feature-release-ledger-${process.pid}.txt`);
+  await fs.writeFile(file, message.endsWith("\n") ? message : `${message}\n`);
+  const args = ["commit", "-F", file];
+  if (noVerify) {
+    args.push("--no-verify");
+  }
+  args.push("--", MANIFEST_PATH);
+  try {
+    await runGit(repoPath, ["add", "--", MANIFEST_PATH]);
+    await runGit(repoPath, args);
+  } finally {
+    await fs.rm(file, { force: true });
   }
 }
 

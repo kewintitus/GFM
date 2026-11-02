@@ -975,22 +975,54 @@ input[type="checkbox"] {
 .tree-id {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
   white-space: nowrap;
-}
-
-.tree-id em {
-  min-width: 58px;
-  font-style: normal;
-  color: var(--faint);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 
 .tree-id code {
   font-family: var(--mono);
+  font-size: 12px;
   color: var(--brass);
+}
+
+.tree-id.is-feature code { color: var(--brass); }
+.tree-id.is-task code { color: var(--qas); }
+.tree-id.is-subtask code { color: var(--uat); }
+.feature-table tr.is-inactive .tree-id code { color: var(--muted); }
+
+.kind-legend {
+  display: flex;
+  gap: 16px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.kind-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+}
+
+.swatch.is-feature { background: var(--brass); }
+.swatch.is-task { background: var(--qas); }
+.swatch.is-subtask { background: var(--uat); }
+
+.desc-clip {
+  display: inline-block;
+  width: 220px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 
 .commit-type {

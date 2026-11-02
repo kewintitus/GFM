@@ -7,6 +7,8 @@ export const SQUASH_TRAILER = "Prepared: squash";
 
 export const MERGE_TRAILER = "Prepared: merge";
 
+export const PROMOTED_TRAILER = "Prepared: promoted";
+
 export function previousEnvironment(target: EnvironmentName): EnvironmentName | null {
   if (target === "QAS") {
     return "DEV";
@@ -327,10 +329,35 @@ export function mergeCommitMessage(featureId: string, commits: PreparedCommitLin
   return preparedCommitMessage("merge", featureId, MERGE_TRAILER, commits);
 }
 
+export function promotionRecordMessage(
+  target: string,
+  commits: PreparedCommitLine[]
+): string {
+  const lines = [`chore: record promotion on ${target}`, "", PROMOTED_TRAILER];
+  const groups = new Map<string, PreparedCommitLine[]>();
+  for (const commit of commits) {
+    const id = normalizeTicket(commit.featureId) || "unscoped";
+    const list = groups.get(id) ?? [];
+    list.push(commit);
+    groups.set(id, list);
+  }
+  for (const [id, list] of groups) {
+    if (id !== "unscoped") {
+      lines.push(`Feature: ${id}`);
+    }
+    for (const commit of list) {
+      const short = commit.shortSha || commit.sha.slice(0, 7);
+      lines.push(`- ${short} ${commit.subject || "Untitled commit"}`.trim());
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}
+
 interface PreparedCommitLine {
   sha: string;
   shortSha?: string;
   subject?: string;
+  featureId?: string | null;
   taskId?: string | null;
   subtaskId?: string | null;
 }

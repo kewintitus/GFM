@@ -233,12 +233,13 @@ export function PromoteView() {
             <PlanBody
               plan={readyPlan}
               busy={busy}
-              onMark={async () => {
+              onMark={async (noVerify) => {
                 const next = await markPromoted({
                   featureIds: selection.featureIds,
                   taskIds: selection.taskIds,
                   subtaskIds: selection.subtaskIds,
-                  target
+                  target,
+                  noVerify
                 });
                 if (next) {
                   setPlan(next);
@@ -256,8 +257,9 @@ export function PromoteView() {
   );
 }
 
-function PlanBody({ plan, busy, onMark }: { plan: Extract<PromotionPlan, { ok: true }>; busy: boolean; onMark: () => Promise<void> }) {
+function PlanBody({ plan, busy, onMark }: { plan: Extract<PromotionPlan, { ok: true }>; busy: boolean; onMark: (noVerify: boolean) => Promise<void> }) {
   const [copied, setCopied] = useState(false);
+  const [noVerify, setNoVerify] = useState(false);
   const timer = useRef(0);
   const hashes = plan.pending.map((commit) => commit.sha).join(" ");
 
@@ -295,11 +297,15 @@ function PlanBody({ plan, busy, onMark }: { plan: Extract<PromotionPlan, { ok: t
           type="button"
           className="primary plan-copy"
           disabled={busy || plan.pending.length === 0}
-          onClick={() => void onMark()}
+          onClick={() => void onMark(noVerify)}
         >
           Mark as promoted
         </button>
       </div>
+      <label className="check">
+        <input type="checkbox" checked={noVerify} disabled={busy || plan.pending.length === 0} onChange={(event) => setNoVerify(event.target.checked)} />
+        <span>Skip hooks (--no-verify)</span>
+      </label>
       {plan.pending.length === 0 ? (
         <p className="meta">Nothing new to move for {plan.featureId}.</p>
       ) : (

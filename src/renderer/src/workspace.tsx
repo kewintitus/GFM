@@ -274,15 +274,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const result = await window.featureRelease!.markPromoted(input);
         if (isFailure(result)) {
           setError(result.error);
-          return null;
+          const fresh = await window.featureRelease!.getSnapshot();
+          if (isSnapshot(fresh)) {
+            apply(fresh, true);
+          }
+          const next = await window.featureRelease!.planPromotion(input);
+          return next.ok === false ? null : next;
         }
         apply(result);
         const next = await window.featureRelease!.planPromotion(input);
         if (next.ok === false) {
-          setNotice("Marked those commits as promoted.");
+          setNotice(`Marked those commits as promoted and committed the ledger on ${result.branch}.`);
           return null;
         }
-        setNotice(`Marked those commits as promoted on ${next.target}.`);
+        setNotice(`Marked those commits as promoted on ${next.target} and committed the ledger on ${result.branch}.`);
         return next;
       });
       return plan ?? null;

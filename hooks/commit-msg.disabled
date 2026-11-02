@@ -2,6 +2,7 @@
 # feature-release-hook
 # Reject commits that do not name a feature, task, and subtask.
 # A prepared merge or squash may omit Task and Subtask when it carries Feature and Prepared: merge or Prepared: squash.
+# A promotion ledger commit may omit Feature, Task, and Subtask when it carries Prepared: promoted.
 # Example trailer lines: Feature: F-1 / Task: T-1 / Subtask: ST-1
 
 msg_file=$1
@@ -11,6 +12,11 @@ feature=$(grep -Eq "^Feature:[[:space:]]*${ticket}[[:space:]]*$" "$msg_file" && 
 task=$(grep -Eq "^Task:[[:space:]]*${ticket}[[:space:]]*$" "$msg_file" && echo yes)
 subtask=$(grep -Eq "^Subtask:[[:space:]]*${ticket}[[:space:]]*$" "$msg_file" && echo yes)
 prepared=$(grep -Eq "^Prepared:[[:space:]]*(squash|merge)[[:space:]]*$" "$msg_file" && echo yes)
+promoted=$(grep -Eq "^Prepared:[[:space:]]*promoted[[:space:]]*$" "$msg_file" && echo yes)
+
+if [ "$promoted" = yes ]; then
+  exit 0
+fi
 
 if [ "$feature" = yes ] && [ "$prepared" = yes ]; then
   exit 0
