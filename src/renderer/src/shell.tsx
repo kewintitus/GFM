@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { IconCatalog, IconCommit, IconEnvironments, IconFeatures, IconFolder, IconPromote, IconRefresh, IconSidebar, Mark } from "./icons";
 import { useWorkspace, type View } from "./workspace";
@@ -118,32 +118,116 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
 }
 
 function Topbar() {
-  const { snapshot, busy, chooseRepo, refresh } = useWorkspace();
+  const { snapshot, busy, chooseRepo, openProject, removeProject, refresh } = useWorkspace();
   const repo = snapshot?.repoPath ? splitRepo(snapshot.repoPath) : null;
+  const projects = snapshot?.projects ?? [];
   const [theme, setTheme] = useState<ThemeName>(readTheme);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [projectQuery, setProjectQuery] = useState("");
+  const menuRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const needle = projectQuery.trim().toLowerCase();
+  const visibleProjects = projects.filter((project) => {
+    if (!needle) {
+      return true;
+    }
+    return `${project.name} ${project.path}`.toLowerCase().includes(needle);
+  });
 
   const chooseTheme = (next: ThemeName) => {
     setTheme(next);
     applyTheme(next);
   };
 
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+    const close = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", close);
+    searchRef.current?.focus();
+    return () => document.removeEventListener("pointerdown", close);
+  }, [menuOpen]);
+
   return (
     <header className="topbar">
-      <button type="button" className="repo-button" onClick={() => void chooseRepo()} disabled={busy} title={snapshot?.repoPath || "Choose a repository"}>
-        <IconFolder />
-        {repo ? (
-          <span>
-            <strong>{repo.name}</strong>
-            <small>{repo.parent || "Repository root"}</small>
-          </span>
-        ) : (
-          <span>
-            <strong>Choose repository</strong>
-            <small>Open the git folder for this release</small>
-          </span>
-        )}
-        {snapshot?.branch ? <em>{snapshot.branch}</em> : null}
-      </button>
+      <div className={menuOpen ? "repo-switch is-open" : "repo-switch"} ref={menuRef}>
+        <button type="button" className="repo-button" onClick={() => { setProjectQuery(""); setMenuOpen((open) => !open); }} disabled={busy} title={snapshot?.repoPath || "Choose a project"} aria-expanded={menuOpen}>
+          <IconFolder />
+          {repo ? (
+            <span>
+              <strong>{repo.name}</strong>
+              <small>{repo.parent || "Repository root"}</small>
+            </span>
+          ) : (
+            <span>
+              <strong>Choose repository</strong>
+              <small>Open a saved project or add a folder</small>
+            </span>
+          )}
+          {snapshot?.branch ? <em>{snapshot.branch}</em> : null}
+        </button>
+        {menuOpen ? (
+          <div className="repo-menu" role="menu">
+            <input
+              ref={searchRef}
+              className="repo-search"
+              type="search"
+              placeholder="Search projects"
+              value={projectQuery}
+              onChange={(event) => setProjectQuery(event.target.value)}
+            />
+            <div className="repo-list">
+            {projects.length === 0 ? <p className="repo-empty">No saved projects yet.</p> : visibleProjects.length === 0 ? <p className="repo-empty">No projects match.</p> : visibleProjects.map((project) => {
+              const current = snapshot?.repoPath?.replace(/[\\/]+$/, "").toLowerCase() === project.path.replace(/[\\/]+$/, "").toLowerCase();
+              return (
+                <div key={project.path} className={current ? "repo-item is-current" : "repo-item"}>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={busy || current}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      void openProject(project.path);
+                    }}
+                  >
+                    <strong>{project.name}</strong>
+                    <small>{project.path}</small>
+                  </button>
+                  <button
+                    type="button"
+                    className="repo-remove"
+                    aria-label={`Remove ${project.name}`}
+                    disabled={busy}
+                    onClick={() => {
+                      void removeProject(project.path);
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              );
+            })}
+            </div>
+            <button
+              type="button"
+              className="repo-add"
+              role="menuitem"
+              disabled={busy}
+              onClick={() => {
+                setMenuOpen(false);
+                void chooseRepo();
+              }}
+            >
+              Add project
+            </button>
+          </div>
+        ) : null}
+      </div>
       <div className="theme-toggle" role="group" aria-label="Color theme">
         <button type="button" aria-pressed={theme === "light"} onClick={() => chooseTheme("light")}>Light</button>
         <button type="button" aria-pressed={theme === "dark"} onClick={() => chooseTheme("dark")}>Dark</button>

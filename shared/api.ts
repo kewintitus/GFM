@@ -15,12 +15,18 @@ export interface FeatureGroup extends FeatureGroupBase {
   environments: EnvironmentName[];
 }
 
+export interface SavedProject {
+  name: string;
+  path: string;
+}
+
 export interface Snapshot {
   ok: true;
   gitAvailable: boolean;
   gitVersion: string;
   gitUser: string;
   repoPath: string | null;
+  projects: SavedProject[];
   branch: string;
   hookInstalled: boolean;
   manifest: {
@@ -65,11 +71,17 @@ export interface CommitResult {
 
 export interface PlanRequest {
   featureId?: string;
+  featureIds?: string[];
+  taskIds?: string[];
+  subtaskIds?: string[];
   target?: EnvironmentName;
 }
 
 export interface PrepareRequest {
   featureId?: string;
+  featureIds?: string[];
+  taskIds?: string[];
+  subtaskIds?: string[];
   target?: EnvironmentName;
   mode?: "merge" | "cherry-pick";
   squash?: boolean;
@@ -88,6 +100,8 @@ export interface BranchList {
 export interface FeatureReleaseApi {
   getSnapshot: () => Promise<Snapshot | IpcFailure>;
   chooseRepo: () => Promise<Snapshot | Canceled | IpcFailure>;
+  openProject: (repoPath: string) => Promise<Snapshot | IpcFailure>;
+  removeProject: (repoPath: string) => Promise<Snapshot | IpcFailure>;
   createManifest: () => Promise<Snapshot | IpcFailure>;
   installHook: () => Promise<Snapshot | Canceled | IpcFailure>;
   removeHook: () => Promise<Snapshot | Canceled | IpcFailure>;
@@ -97,6 +111,7 @@ export interface FeatureReleaseApi {
   saveCatalog: (catalog: Catalog) => Promise<Snapshot | IpcFailure>;
   saveEnvironmentBranches: (names: BranchNames) => Promise<Snapshot | IpcFailure>;
   planPromotion: (input: PlanRequest) => Promise<PromotionPlan | IpcFailure>;
+  markPromoted: (input: PlanRequest) => Promise<Snapshot | IpcFailure>;
   preparePromotion: (input: PrepareRequest) => Promise<Snapshot | IpcFailure>;
   listBranches: () => Promise<BranchList | IpcFailure>;
   createWorkBranch: (input: WorkBranchRequest) => Promise<Snapshot | IpcFailure>;

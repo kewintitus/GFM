@@ -63,6 +63,8 @@ export function CommitView() {
   const errors = attempted ? fieldErrors(prepared.errors) : {};
   const contributor = role === "contributor";
   const canSubmit = contributor && Boolean(snapshot?.repoPath) && !busy;
+  const [timelineOpen, setTimelineOpen] = useState(false);
+  const timeline = timelineCommits(snapshot?.features ?? []);
 
   useEffect(() => {
     if (lockedType && type !== lockedType) {
@@ -246,15 +248,67 @@ export function CommitView() {
             {attempted && stagedCount === 0 ? <small className="field-error">Stage at least one file in the tree.</small> : null}
           </form>
         </div>
-        <StageTree
-          changes={changes}
-          busy={busy || !contributor}
-          onStage={(paths) => void stagePaths(paths)}
-          onUnstage={(paths) => void unstagePaths(paths)}
-        />
+        <div className="commit-side">
+          <StageTree
+            changes={changes}
+            busy={busy || !contributor}
+            onStage={(paths) => void stagePaths(paths)}
+            onUnstage={(paths) => void unstagePaths(paths)}
+          />
+          <section className="timeline">
+            <button type="button" aria-expanded={timelineOpen} onClick={() => setTimelineOpen((open) => !open)}>
+              <span>
+                <strong>Timeline</strong>
+                <span className="meta">{timeline.length}</span>
+              </span>
+              <em>{timelineOpen ? "Hide" : "Show"}</em>
+            </button>
+            {timelineOpen ? (
+              timeline.length === 0 ? <p className="empty">No commits on this branch yet.</p> : (
+                <ol className="timeline-list">
+                  {timeline.map((commit, index) => (
+                    <li key={commit.sha}>
+                      <span className={index === 0 ? "timeline-dot is-head" : "timeline-dot"} />
+                      <span>
+                        <strong>{commit.subject || "Untitled commit"}</strong>
+                        <span className="meta">
+                          {index === 0 && snapshot?.branch ? <em>{snapshot.branch}</em> : null}
+                          {commit.author}
+                          {commit.date ? ` · ${formatCommitDate(commit.date)}` : ""}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              )
+            ) : null}
+          </section>
+        </div>
       </div>
     </section>
   );
+}
+
+function timelineCommits(groups: { commits: { sha: string; shortSha: string; author: string; date: string; subject: string; featureId: string | null; taskId: string | null; subtaskId: string | null }[] }[]) {
+  const seen = new Set<string>();
+  return groups
+    .flatMap((group) => group.commits)
+    .filter((commit) => {
+      if (seen.has(commit.sha)) {
+        return false;
+      }
+      seen.add(commit.sha);
+      return true;
+    })
+    .sort((left, right) => Date.parse(right.date) - Date.parse(left.date));
+}
+
+function formatCommitDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function openTask(task: { active: boolean; subtasks: { active: boolean; status: string }[] }): boolean {

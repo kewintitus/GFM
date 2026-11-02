@@ -420,6 +420,38 @@ export function findTask(catalog: Catalog, featureId: string, taskId: string): T
   return findFeature(catalog, featureId)?.tasks.find((item) => item.id === normalizeTicket(taskId));
 }
 
+export function promotableSubtaskIds(task: Pick<TaskItem, "active" | "status" | "subtasks">, subtaskIds: string[]): string[] | null {
+  if (task.active === false) {
+    return null;
+  }
+  const ready = subtaskIds.filter((id) => task.subtasks.some((item) => item.id === id && item.active !== false && item.status === "completed"));
+  if (task.status !== "completed" && ready.length === 0) {
+    return null;
+  }
+  return ready;
+}
+
+export function isReadyToPromote(catalog: Catalog, commit: { featureId: string | null; taskId?: string | null; subtaskId?: string | null }): boolean {
+  const feature = commit.featureId ? findFeature(catalog, commit.featureId) : undefined;
+  if (!feature || feature.active === false) {
+    return false;
+  }
+  if (commit.subtaskId) {
+    for (const task of feature.tasks) {
+      const subtask = task.subtasks.find((item) => item.id === normalizeTicket(commit.subtaskId));
+      if (subtask) {
+        return subtask.active !== false && subtask.status === "completed";
+      }
+    }
+    return false;
+  }
+  if (commit.taskId) {
+    const task = findTask(catalog, feature.id, commit.taskId);
+    return Boolean(task && task.active !== false && task.status === "completed");
+  }
+  return feature.status === "completed";
+}
+
 function issue(catalog: Catalog, key: SequenceKey, requested?: string): { ok: true; id: string } | { ok: false; error: string } {
   const taken = new Set(allIds(catalog));
   const reserved = normalizeTicket(requested);

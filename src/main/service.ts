@@ -3,8 +3,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { app, dialog, type BrowserWindow } from "electron";
-import type { CommitRequest, CommitResult, PlanRequest, PrepareRequest, Snapshot } from "../../shared/api";
-import { CATALOG_PATH, FEATURES_DIR, LEGACY_CATALOG_PATH, canCompleteFeature, canCompleteTask, catalogFromFeatures, emptyCatalog, findFeature, findTask, parseCatalog, parseFeatureFile, serializeFeature, setFeatureStatus, setSubtaskStatus, setTaskStatus, type Catalog } from "../../shared/catalog";
+import type { CommitRequest, CommitResult, PlanRequest, PrepareRequest, SavedProject, Snapshot } from "../../shared/api";
+import { CATALOG_PATH, FEATURES_DIR, LEGACY_CATALOG_PATH, canCompleteFeature, canCompleteTask, catalogFromFeatures, emptyCatalog, findFeature, findTask, isReadyToPromote, parseCatalog, parseFeatureFile, serializeFeature, setFeatureStatus, setSubtaskStatus, setTaskStatus, type Catalog } from "../../shared/catalog";
 import { completionCommitMessage, prepareCommit } from "../../shared/commit-message";
 import { groupByFeature, parseGitLog } from "../../shared/log";
 import {
@@ -14,6 +14,7 @@ import {
   environmentsForFeature,
   parseManifest,
   recordPrepared,
+  recordPromotion,
   withBranchNames,
   branchNames,
   ENV_RAIL,
@@ -23,13 +24,17 @@ import {
 import { planPromotion, type PromotionPlan } from "../../shared/plan";
 import {
   baseBranch,
+  commitInSelection,
   commitsForFeature,
   defaultPrepareMode,
   guardPreparation,
   previousEnvironment,
-  promoteBranchName,
+  promotionNodes,
+  selectionBranchName,
+  wholeFeatureSelection,
   mergeCommitMessage,
-  squashCommitMessage
+  squashCommitMessage,
+  type PromotionSelection
 } from "../../shared/promote";
 import { normalizeTicket } from "../../shared/ticket";
 import { branchRefPrefixes, sortBaseBranches, usesCurrentBranch } from "../../shared/work-branch";
@@ -42,21 +47,65 @@ function settingsFile(): string {
   return path.join(app.getPath("userData"), "settings.json");
 }
 
-async function loadSettings(): Promise<{ repoPath?: string }> {
+interface Settings {
+  repoPath?: string;
+  projects: SavedProject[];
+}
+
+async function loadSettings(): Promise<Settings> {
   try {
     const parsed: unknown = JSON.parse(await fs.readFile(settingsFile(), "utf8"));
-    if (typeof parsed === "object" && parsed !== null && "repoPath" in parsed && typeof parsed.repoPath === "string") {
-      return { repoPath: parsed.repoPath };
+    const settings = normalizeSettings(parsed);
+    if (!hasProjectList(parsed)) {
+      await saveSettings(settings);
     }
-    return {};
+    return settings;
   } catch {
-    return {};
+    return { projects: [] };
   }
 }
 
-async function saveSettings(settings: { repoPath: string }): Promise<void> {
+function normalizeSettings(parsed: unknown): Settings {
+  const record = typeof parsed === "object" && parsed !== null ? parsed as Record<string, unknown> : {};
+  const projects = Array.isArray(record.projects) ? record.projects.flatMap(readProject) : [];
+  const repoPath = typeof record.repoPath === "string" && record.repoPath.trim() ? record.repoPath : undefined;
+  if (repoPath && !projects.some((project) => samePath(project.path, repoPath))) {
+    projects.unshift({ name: folderName(repoPath), path: repoPath });
+  }
+  return { repoPath, projects };
+}
+
+function readProject(value: unknown): SavedProject[] {
+  if (typeof value !== "object" || value === null || !("path" in value) || typeof value.path !== "string" || !value.path.trim()) {
+    return [];
+  }
+  const projectName = "name" in value && typeof value.name === "string" && value.name.trim() ? value.name.trim() : folderName(value.path);
+  return [{ name: projectName, path: value.path }];
+}
+
+function hasProjectList(parsed: unknown): boolean {
+  return typeof parsed === "object" && parsed !== null && "projects" in parsed && Array.isArray(parsed.projects);
+}
+
+async function saveSettings(settings: Settings): Promise<void> {
   await fs.mkdir(path.dirname(settingsFile()), { recursive: true });
   await fs.writeFile(settingsFile(), `${JSON.stringify(settings, null, 2)}\n`);
+}
+
+async function rememberProject(repoPath: string): Promise<void> {
+  const settings = await loadSettings();
+  const projects = settings.projects.filter((project) => !samePath(project.path, repoPath));
+  projects.unshift({ name: folderName(repoPath), path: repoPath });
+  await saveSettings({ repoPath, projects });
+}
+
+function folderName(repoPath: string): string {
+  return path.basename(repoPath.replace(/[\\/]+$/, "")) || repoPath;
+}
+
+function samePath(left: string, right: string): boolean {
+  const clean = (value: string) => path.normalize(value).replace(/[\\/]+$/, "").toLowerCase();
+  return clean(left) === clean(right);
 }
 
 function isEnoent(error: unknown): boolean {
@@ -186,13 +235,14 @@ function assertSafePath(filePath: string): void {
   }
 }
 
-function emptySnapshot(git: { available: boolean; version: string }, error = ""): Snapshot {
+function emptySnapshot(git: { available: boolean; version: string }, projects: SavedProject[] = [], error = ""): Snapshot {
   return {
     ok: true,
     gitAvailable: git.available,
     gitVersion: git.version,
     gitUser: "",
     repoPath: null,
+    projects,
     branch: "",
     hookInstalled: false,
     manifest: { exists: false, path: MANIFEST_PATH, data: defaultManifest() },
@@ -207,7 +257,7 @@ export async function snapshot(): Promise<Snapshot> {
   const git = await gitAvailable();
   const settings = await loadSettings();
   if (!git.available || !settings.repoPath) {
-    return emptySnapshot(git);
+    return emptySnapshot(git, settings.projects);
   }
 
   try {
@@ -234,11 +284,11 @@ export async function snapshot(): Promise<Snapshot> {
 
     const features = groupByFeature(commits).map((group) => ({
       ...group,
-      environments: environmentsForFeature(group.id, manifest.data, branch)
+      environments: environmentsForFeature(group.id, manifest.data)
     }));
 
     return {
-      ...emptySnapshot(git),
+      ...emptySnapshot(git, settings.projects),
       repoPath,
       branch,
       gitUser,
@@ -250,7 +300,7 @@ export async function snapshot(): Promise<Snapshot> {
       error: ""
     };
   } catch (error) {
-    return emptySnapshot(git, error instanceof Error ? error.message : "Could not read the repository.");
+    return emptySnapshot(git, settings.projects, error instanceof Error ? error.message : "Could not read the repository.");
   }
 }
 
@@ -266,7 +316,29 @@ export async function chooseRepo(parent?: BrowserWindow): Promise<Snapshot | { o
     return { ok: true, canceled: true };
   }
   const repoPath = await resolveRepo(picked.filePaths[0]);
-  await saveSettings({ repoPath });
+  await rememberProject(repoPath);
+  return snapshot();
+}
+
+export async function openProject(repoPath: string): Promise<Snapshot> {
+  const settings = await loadSettings();
+  const known = settings.projects.find((project) => samePath(project.path, repoPath));
+  if (!known) {
+    throw new Error("That project is not saved on this machine.");
+  }
+  const resolved = await resolveRepo(known.path);
+  await rememberProject(resolved);
+  return snapshot();
+}
+
+export async function removeProject(repoPath: string): Promise<Snapshot> {
+  const settings = await loadSettings();
+  const projects = settings.projects.filter((project) => !samePath(project.path, repoPath));
+  const repoWasOpen = Boolean(settings.repoPath && samePath(settings.repoPath, repoPath));
+  await saveSettings({
+    repoPath: repoWasOpen ? projects[0]?.path : settings.repoPath,
+    projects
+  });
   return snapshot();
 }
 
@@ -572,9 +644,12 @@ export async function buildPlan(input: PlanRequest): Promise<PromotionPlan> {
   const readBranch = target === "DEV"
     ? current.branch
     : baseBranch(current.manifest.data, previousEnvironment(target) ?? "DEV");
-  const commits = await commitsOn(current.repoPath, readBranch);
+  const commits = (await commitsOn(current.repoPath, readBranch)).filter((commit) => isReadyToPromote(current.catalog.data, commit));
   const plan = planPromotion({
     featureId: input.featureId,
+    featureIds: input.featureIds,
+    taskIds: input.taskIds,
+    subtaskIds: input.subtaskIds,
     target,
     commitsNewestFirst: commits,
     manifest: { ...current.manifest.data, exists: current.manifest.exists },
@@ -584,6 +659,22 @@ export async function buildPlan(input: PlanRequest): Promise<PromotionPlan> {
     throw new Error(plan.error);
   }
   return plan;
+}
+
+export async function markPromoted(input: PlanRequest): Promise<Snapshot> {
+  const plan = await buildPlan(input);
+  if (!plan.ok) {
+    throw new Error(plan.error);
+  }
+  if (plan.pending.length === 0) {
+    throw new Error("Nothing new to record.");
+  }
+  const current = await snapshot();
+  if (!current.repoPath) {
+    throw new Error("Choose a repository first.");
+  }
+  await writeManifest(current.repoPath, recordPromotion(current.manifest.data, plan.target, plan.pending), false);
+  return snapshot();
 }
 
 export async function preparePromotion(input: PrepareRequest): Promise<Snapshot> {
@@ -606,20 +697,30 @@ export async function preparePromotion(input: PrepareRequest): Promise<Snapshot>
   await runGit(repoPath, ["fetch", "origin"]);
   const readBranch = target === "DEV" ? sourceBranch : baseBranch(current.manifest.data, previousEnvironment(target) ?? "DEV");
   const newest = await commitsOn(repoPath, readBranch);
-  const oldest = [...newest].reverse();
-  const recorded = target === "DEV"
-    ? []
-    : current.manifest.data.environments[target].features[normalizeTicket(input.featureId)]?.commits.map((item) => item.source) ?? [];
-  const shas = commitsForFeature(oldest, input.featureId ?? "", recorded);
+  const oldest = [...newest].reverse().filter((commit) => isReadyToPromote(current.catalog.data, commit));
+  const usingSelection = Array.isArray(input.featureIds) || Array.isArray(input.taskIds) || Array.isArray(input.subtaskIds);
+  const selection: PromotionSelection = {
+    featureIds: (input.featureIds ?? []).map((item) => normalizeTicket(item)).filter(Boolean),
+    taskIds: (input.taskIds ?? []).map((item) => normalizeTicket(item)).filter(Boolean),
+    subtaskIds: (input.subtaskIds ?? []).map((item) => normalizeTicket(item)).filter(Boolean)
+  };
+  const nodes = promotionNodes(current.catalog.data.features, oldest);
+  const recordedFor = (featureId: string | null) =>
+    current.manifest.data.environments[target].features[normalizeTicket(featureId)]?.commits.map((item) => item.source) ?? [];
+  const shas = usingSelection
+    ? oldest.filter((commit) => commitInSelection(commit, selection) && !recordedFor(commit.featureId).includes(commit.sha)).map((commit) => commit.sha)
+    : commitsForFeature(oldest, input.featureId ?? "", recordedFor(input.featureId ?? ""));
   const pending = oldest.filter((commit) => shas.includes(commit.sha));
-  const branchName = promoteBranchName(base, input.featureId ?? "");
+  const whole = usingSelection ? wholeFeatureSelection(nodes, selection) : normalizeTicket(input.featureId);
+  const branchName = usingSelection ? selectionBranchName(base, nodes, selection) : `promote/${base}/${normalizeTicket(input.featureId)}`;
+  const guardFeature = whole || selection.featureIds[0] || nodes.find((node) => node.tasks.some((task) => selection.taskIds.includes(task.id) || task.subtaskIds.some((id) => selection.subtaskIds.includes(id))))?.id || normalizeTicket(input.featureId);
   const promoteExists = await refExists(repoPath, `refs/heads/${branchName}`)
     || await refExists(repoPath, `refs/remotes/origin/${branchName}`);
   const localBase = await refExists(repoPath, `refs/heads/${base}`);
   const originBase = await refExists(repoPath, `refs/remotes/origin/${base}`);
   const guard = guardPreparation({
     dirty: current.changes.length > 0,
-    featureId: input.featureId ?? "",
+    featureId: guardFeature,
     target,
     mode,
     sourceBranch,
@@ -628,7 +729,8 @@ export async function preparePromotion(input: PrepareRequest): Promise<Snapshot>
     baseExistsOnOrigin: originBase,
     canFastForward: localBase && originBase ? await isAncestor(repoPath, `refs/heads/${base}`, `refs/remotes/origin/${base}`) : false,
     promoteBranchExists: promoteExists,
-    pendingCount: shas.length
+    pendingCount: shas.length,
+    branchName
   });
   if (!guard.ok) {
     throw new Error(guard.error);
@@ -656,21 +758,26 @@ export async function preparePromotion(input: PrepareRequest): Promise<Snapshot>
       } else {
         await runGit(repoPath, ["cherry-pick", "--no-commit", ...shas]);
       }
-      await commitPreparedMessage(repoPath, squashCommitMessage(input.featureId ?? "", pending));
+      await commitPreparedMessage(repoPath, squashCommitMessage(guardFeature, pending));
       squashing = false;
     } else if (mode === "merge") {
       await runGit(repoPath, ["merge", "--no-commit", sourceBranch]);
-      await commitPreparedMessage(repoPath, mergeCommitMessage(input.featureId ?? "", pending));
+      await commitPreparedMessage(repoPath, mergeCommitMessage(guardFeature, pending));
     } else {
       await runGit(repoPath, ["cherry-pick", ...shas]);
     }
-    await writeManifest(repoPath, recordPrepared(current.manifest.data, target, normalizeTicket(input.featureId ?? ""), {
-      branch: guard.branch,
-      sourceBranch,
-      mode,
-      squash,
-      baseSha
-    }));
+    const recordedIds = [...new Set(pending.map((commit) => normalizeTicket(commit.featureId)).filter(Boolean))];
+    let manifest = current.manifest.data;
+    for (const id of recordedIds.length > 0 ? recordedIds : [guardFeature]) {
+      manifest = recordPrepared(manifest, target, id, {
+        branch: guard.branch,
+        sourceBranch,
+        mode,
+        squash,
+        baseSha
+      });
+    }
+    await writeManifest(repoPath, manifest);
     return snapshot();
   } catch (error) {
     const message = error instanceof Error ? error.message : "Git failed.";
@@ -859,10 +966,12 @@ async function conflictFiles(repoPath: string): Promise<string[]> {
   }
 }
 
-async function writeManifest(repoPath: string, manifest: Manifest): Promise<void> {
+async function writeManifest(repoPath: string, manifest: Manifest, stage = true): Promise<void> {
   const fullPath = path.join(repoPath, ...MANIFEST_PATH.split("/"));
   await fs.mkdir(path.dirname(fullPath), { recursive: true });
   const { exists: _exists, ...stored } = manifest;
   await fs.writeFile(fullPath, `${JSON.stringify(stored, null, 2)}\n`);
-  await runGit(repoPath, ["add", "--", MANIFEST_PATH]);
+  if (stage) {
+    await runGit(repoPath, ["add", "--", MANIFEST_PATH]);
+  }
 }

@@ -6,6 +6,8 @@ import type { BranchNames } from "../../shared/manifest";
 const api: FeatureReleaseApi = {
   getSnapshot: () => ipcRenderer.invoke("app:snapshot"),
   chooseRepo: () => ipcRenderer.invoke("repo:choose"),
+  openProject: (repoPath: string) => ipcRenderer.invoke("repo:open", repoPath),
+  removeProject: (repoPath: string) => ipcRenderer.invoke("repo:remove", repoPath),
   createManifest: () => ipcRenderer.invoke("manifest:create"),
   installHook: () => ipcRenderer.invoke("hook:install"),
   removeHook: () => ipcRenderer.invoke("hook:remove"),
@@ -15,6 +17,7 @@ const api: FeatureReleaseApi = {
   saveCatalog: (catalog: Catalog) => ipcRenderer.invoke("catalog:save", catalog),
   saveEnvironmentBranches: (names: BranchNames) => ipcRenderer.invoke("manifest:branches", names),
   planPromotion: (input: PlanRequest) => ipcRenderer.invoke("promote:plan", input),
+  markPromoted: (input: PlanRequest) => ipcRenderer.invoke("promote:mark", input),
   preparePromotion: (input: PrepareRequest) => ipcRenderer.invoke("promote:prepare", input),
   listBranches: () => ipcRenderer.invoke("repo:branches"),
   createWorkBranch: (input: WorkBranchRequest) => ipcRenderer.invoke("branch:create", input)

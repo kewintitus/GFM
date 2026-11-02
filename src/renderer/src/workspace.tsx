@@ -17,6 +17,8 @@ interface WorkspaceValue {
   setView: (view: View) => void;
   dismissToast: () => void;
   chooseRepo: () => Promise<void>;
+  openProject: (repoPath: string) => Promise<void>;
+  removeProject: (repoPath: string) => Promise<void>;
   refresh: () => Promise<void>;
   createManifest: () => Promise<void>;
   installHook: () => Promise<void>;
@@ -27,6 +29,7 @@ interface WorkspaceValue {
   saveCatalog: (catalog: Catalog, notice?: string) => Promise<boolean>;
   saveEnvironmentBranches: (names: BranchNames) => Promise<boolean>;
   buildPlan: (input: PlanRequest) => Promise<PromotionPlan | null>;
+  markPromoted: (input: PlanRequest) => Promise<PromotionPlan | null>;
   preparePromotion: (input: PrepareRequest) => Promise<boolean>;
   listBranches: () => Promise<string[]>;
   createWorkBranch: (input: WorkBranchRequest) => Promise<string>;
@@ -141,6 +144,24 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       apply(result);
       setNotice("Repository selected.");
     }),
+    openProject: (repoPath) => run(async () => {
+      const result = await window.featureRelease!.openProject(repoPath);
+      if (isFailure(result)) {
+        setError(result.error);
+        return;
+      }
+      apply(result);
+      setNotice("Project opened.");
+    }),
+    removeProject: (repoPath) => run(async () => {
+      const result = await window.featureRelease!.removeProject(repoPath);
+      if (isFailure(result)) {
+        setError(result.error);
+        return;
+      }
+      apply(result);
+      setNotice("Project removed from this machine.");
+    }),
     createManifest: () => run(async () => {
       const result = await window.featureRelease!.createManifest();
       if (isFailure(result)) {
@@ -240,6 +261,24 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
         setNotice(`Plan ready for ${result.featureId} → ${result.target}.`);
         return result;
+      });
+      return plan ?? null;
+    },
+    markPromoted: async (input) => {
+      const plan = await run(async () => {
+        const result = await window.featureRelease!.markPromoted(input);
+        if (isFailure(result)) {
+          setError(result.error);
+          return null;
+        }
+        apply(result);
+        const next = await window.featureRelease!.planPromotion(input);
+        if (next.ok === false) {
+          setNotice("Marked those commits as promoted.");
+          return null;
+        }
+        setNotice(`Marked those commits as promoted on ${next.target}.`);
+        return next;
       });
       return plan ?? null;
     },

@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { join } from "node:path";
-import { buildPlan, chooseRepo, createCommit, createManifest, createWorkBranch, installHook, listBranches, preparePromotion, removeHook, saveCatalog, saveEnvironmentBranches, setStaged, snapshot } from "./service";
+import { buildPlan, chooseRepo, createCommit, createManifest, createWorkBranch, installHook, listBranches, markPromoted, openProject, preparePromotion, removeHook, removeProject, saveCatalog, saveEnvironmentBranches, setStaged, snapshot } from "./service";
 import type { Catalog } from "../../shared/catalog";
 import type { CommitRequest, PlanRequest, PrepareRequest, WorkBranchRequest } from "../../shared/api";
 import type { BranchNames } from "../../shared/manifest";
@@ -95,6 +95,8 @@ function handle<T>(channel: string, fn: (event: IpcMainInvokeEvent, input: T) =>
 app.whenReady().then(() => {
   handle("app:snapshot", () => snapshot());
   handle("repo:choose", (event) => chooseRepo(parentFrom(event)));
+  handle<string>("repo:open", (_event, repoPath) => openProject(repoPath));
+  handle<string>("repo:remove", (_event, repoPath) => removeProject(repoPath));
   handle("manifest:create", () => createManifest());
   handle("hook:install", (event) => installHook(parentFrom(event)));
   handle("hook:remove", (event) => removeHook(parentFrom(event)));
@@ -104,6 +106,7 @@ app.whenReady().then(() => {
   handle<Catalog>("catalog:save", (_event, catalog) => saveCatalog(catalog));
   handle<BranchNames>("manifest:branches", (_event, names) => saveEnvironmentBranches(names));
   handle<PlanRequest>("promote:plan", (_event, input) => buildPlan(input));
+  handle<PlanRequest>("promote:mark", (_event, input) => markPromoted(input));
   handle<PrepareRequest>("promote:prepare", (_event, input) => preparePromotion(input));
   handle("repo:branches", () => listBranches());
   handle<WorkBranchRequest>("branch:create", (_event, input) => createWorkBranch(input));

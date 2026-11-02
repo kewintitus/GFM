@@ -57,7 +57,7 @@ A task can require one commit type, such as `feat`. The type list on the commit 
 
 Switch the role to **Release manager**. Start from the branch that contains the feature commits, with a clean working tree.
 
-1. Open **Promote**, choose the feature, and choose the target.
+1. Open **Promote**. Choose a feature to include every task and subtask, or clear the ones that should stay behind. Choose the target.
 2. **Build plan** lists the commits that would move, oldest first. **Copy hashes** copies their full hashes, separated by spaces, for a manual `git cherry-pick`.
 3. **Prepare branch** checks out a new branch named `promote/<base>/<feature id>`. DEV can merge the work branch. QAS, UAT, and PROD cherry-pick that feature only, because a merge would bring every other feature. **Squash into one commit** combines the selected commits.
 4. The long-lived branch stays unchanged. Review the prepared branch, then merge it with your usual git process.

@@ -19,15 +19,23 @@ export function ManifestCallout() {
   );
 }
 
-export function EnvRail({ active }: { active: EnvironmentName[] }) {
+export function EnvRail({ active, partial = [] }: { active: EnvironmentName[]; partial?: EnvironmentName[] }) {
   const present = new Set(active);
+  const some = new Set(partial);
+  const label = [
+    active.length ? `On ${active.join(", ")}` : "",
+    some.size ? `Partly on ${partial.join(", ")}` : ""
+  ].filter(Boolean).join(". ") || "Not recorded on an environment";
   return (
-    <span className="env-rail" aria-label={active.length ? `On ${active.join(", ")}` : "Not recorded on an environment"}>
-      {ENV_RAIL.map((name) => (
-        <span key={name} className={present.has(name) ? `env-slot on ${name.toLowerCase()}` : "env-slot"}>
-          {name}
-        </span>
-      ))}
+    <span className="env-rail" aria-label={label}>
+      {ENV_RAIL.map((name) => {
+        const state = present.has(name) ? "on" : some.has(name) ? "partial" : "";
+        return (
+          <span key={name} className={state ? `env-slot ${state} ${name.toLowerCase()}` : "env-slot"}>
+            {name}
+          </span>
+        );
+      })}
     </span>
   );
 }

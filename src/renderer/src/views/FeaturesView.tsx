@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { findFeature } from "@shared/catalog";
+import { findFeature, findTask } from "@shared/catalog";
 import type { CommitRecord } from "@shared/log";
+import { ENV_RAIL, environmentPresence, type EnvironmentName, type Manifest } from "@shared/manifest";
 import { EnvRail, ManifestCallout } from "../bits";
 import { useWorkspace } from "../workspace";
 
@@ -10,7 +11,8 @@ export function FeaturesView() {
   const { snapshot } = useWorkspace();
   const [openId, setOpenId] = useState<string | null>(null);
   const features = snapshot?.features ?? [];
-  const devBranch = snapshot?.manifest.data.devBranch ?? "dev";
+  const [openTask, setOpenTask] = useState<string | null>(null);
+  const [openSubtask, setOpenSubtask] = useState<string | null>(null);
 
   return (
     <section className="page">
@@ -18,7 +20,7 @@ export function FeaturesView() {
         <p className="eyebrow">{snapshot?.branch || "Branch"}</p>
         <h1>Features on this branch</h1>
         <p className="lede">
-          Grouped by the Feature trailer. DEV means the commit is on {devBranch}. QAS, UAT, and PROD come from the manifest.
+          Grouped by feature, task, and subtask. DEV, QAS, UAT, and PROD follow the recorded promotion SHAs. A dashed name means only some of the commits are there.
         </p>
       </header>
       <ManifestCallout />
@@ -30,6 +32,9 @@ export function FeaturesView() {
             const key = feature.id ?? "unscoped";
             const open = openId === key;
             const name = feature.id && snapshot ? findFeature(snapshot.catalog.data, feature.id)?.name : "";
+            const tasks = feature.id ? tasksFor(feature.commits, feature.id, snapshot?.catalog.data) : [];
+            const featureOnly = feature.commits.filter((commit) => !commit.taskId);
+            const featureState = feature.id ? presenceFor(feature.commits, feature.id, snapshot?.manifest.data) : null;
             return (
               <article key={key} className={feature.id ? "feature" : "feature is-unscoped"}>
                 <button
@@ -39,6 +44,7 @@ export function FeaturesView() {
                   onClick={() => setOpenId(open ? null : key)}
                 >
                   <span>
+                    <span className="kind feature">Feature</span>
                     <strong>{name || feature.label}</strong>
                     <span className="meta">
                       {name && feature.id ? `${feature.id} · ` : ""}
@@ -47,9 +53,63 @@ export function FeaturesView() {
                     </span>
                   </span>
                   <span className="subject">{feature.latest?.subject || "No subject"}</span>
-                  {feature.id ? <EnvRail active={feature.environments} /> : <span className="meta">No feature trailer</span>}
+                  {featureState ? <EnvRail active={featureState.on} partial={featureState.partial} /> : <span className="meta">No feature trailer</span>}
                 </button>
-                {open ? <CommitList commits={feature.commits} /> : null}
+                {open ? (
+                  <div className="scope-tree">
+                    {featureOnly.length > 0 ? <CommitList commits={featureOnly} /> : null}
+                    {tasks.map((task) => {
+                      const taskKey = `${key}/${task.id}`;
+                      const taskOpen = openTask === taskKey;
+                      const taskState = feature.id ? presenceFor(task.commits, feature.id, snapshot?.manifest.data) : null;
+                      return (
+                        <div key={task.id} className="task-block">
+                          <button
+                            type="button"
+                            className="feature-row scope-row task"
+                            aria-expanded={taskOpen}
+                            onClick={() => setOpenTask(taskOpen ? null : taskKey)}
+                          >
+                            <span>
+                              <span className="kind task">Task</span>
+                              <strong>{task.name}</strong>
+                              <span className="meta">{task.id} · {task.commits.length} {task.commits.length === 1 ? "commit" : "commits"}</span>
+                            </span>
+                            {taskState ? <EnvRail active={taskState.on} partial={taskState.partial} /> : null}
+                          </button>
+                          {taskOpen ? (
+                            <div className="subtask-list">
+                              {task.subtasks.map((subtask) => {
+                                const subtaskKey = `${taskKey}/${subtask.id}`;
+                                const subtaskOpen = openSubtask === subtaskKey;
+                                const subtaskState = feature.id ? presenceFor(subtask.commits, feature.id, snapshot?.manifest.data) : null;
+                                return (
+                                  <div key={subtask.id} className="subtask-block">
+                                    <button
+                                      type="button"
+                                      className="feature-row scope-row subtask"
+                                      aria-expanded={subtaskOpen}
+                                      onClick={() => setOpenSubtask(subtaskOpen ? null : subtaskKey)}
+                                    >
+                                      <span>
+                                        <span className="kind subtask">Subtask</span>
+                                        <strong>{subtask.name}</strong>
+                                        <span className="meta">{subtask.id} · {subtask.commits.length} {subtask.commits.length === 1 ? "commit" : "commits"}</span>
+                                      </span>
+                                      {subtaskState ? <EnvRail active={subtaskState.on} partial={subtaskState.partial} /> : null}
+                                    </button>
+                                    {subtaskOpen ? <CommitList commits={subtask.commits} /> : null}
+                                  </div>
+                                );
+                              })}
+                              {task.loose.length > 0 ? <CommitList commits={task.loose} /> : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
               </article>
             );
           })}
@@ -57,6 +117,41 @@ export function FeaturesView() {
       )}
     </section>
   );
+}
+
+function tasksFor(commits: CommitRecord[], featureId: string, catalog: Parameters<typeof findFeature>[0] | undefined) {
+  const taskIds = [...new Set(commits.map((commit) => commit.taskId).filter((id): id is string => Boolean(id)))];
+  return taskIds.map((taskId) => {
+    const named = catalog ? findTask(catalog, featureId, taskId) : undefined;
+    const taskCommits = commits.filter((commit) => commit.taskId === taskId);
+    const subtaskIds = [...new Set(taskCommits.map((commit) => commit.subtaskId).filter((id): id is string => Boolean(id)))];
+    return {
+      id: taskId,
+      name: named?.name || taskId,
+      commits: taskCommits,
+      loose: taskCommits.filter((commit) => !commit.subtaskId),
+      subtasks: subtaskIds.map((subtaskId) => {
+        const subtask = named?.subtasks.find((item) => item.id === subtaskId);
+        return {
+          id: subtaskId,
+          name: subtask?.name || subtaskId,
+          commits: taskCommits.filter((commit) => commit.subtaskId === subtaskId)
+        };
+      })
+    };
+  });
+}
+
+function presenceFor(
+  commits: CommitRecord[],
+  featureId: string,
+  manifest: Manifest | undefined
+) {
+  const recorded = {} as Partial<Record<EnvironmentName, string[]>>;
+  for (const name of ENV_RAIL) {
+    recorded[name] = manifest?.environments[name]?.features[featureId]?.commits.map((item) => item.source) ?? [];
+  }
+  return environmentPresence(commits.map((commit) => commit.sha), recorded);
 }
 
 function CommitList({ commits }: { commits: CommitRecord[] }) {

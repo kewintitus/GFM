@@ -1,11 +1,11 @@
 import { expect, test } from "vitest";
-import { addFeature, addSubtask, addTask, canCompleteFeature, canCompleteTask, catalogFromFeatures, compareItemsDescending, emptyCatalog, parseCatalog, parseFeatureFile, serializeFeature, setFeatureActive, setSubtaskStatus, subtaskProgress, taskProgress } from "./catalog";
+import { addFeature, addSubtask, addTask, canCompleteFeature, canCompleteTask, catalogFromFeatures, compareItemsDescending, emptyCatalog, isReadyToPromote, parseCatalog, parseFeatureFile, promotableSubtaskIds, serializeFeature, setFeatureActive, setSubtaskStatus, subtaskProgress, taskProgress } from "./catalog";
 import { isTicket } from "./ticket";
 import { completionCommitMessage, prepareCommit } from "./commit-message";
 import { groupByFeature, parseGitLog } from "./log";
-import { defaultManifest, environmentsForFeature, parseManifest, recordPrepared, withBranchNames } from "./manifest";
+import { defaultManifest, environmentPresence, environmentsForFeature, parseManifest, recordPrepared, recordPromotion, withBranchNames } from "./manifest";
 import { planPromotion } from "./plan";
-import { guardPreparation, mergeCommitMessage, promoteBranchName, squashCommitMessage } from "./promote";
+import { commitInSelection, guardPreparation, mergeCommitMessage, promoteBranchName, promotionNodes, selectionBranchName, squashCommitMessage, toggleFeature, toggleSubtask, toggleTask, wholeFeatureSelection } from "./promote";
 import { branchRefPrefixes, sortBaseBranches, usesCurrentBranch, workBranchName } from "./work-branch";
 
 const catalog = parseCatalog(JSON.stringify({
@@ -366,6 +366,46 @@ test("setFeatureActive keeps the feature and the next id", () => {
   expect(inactive.sequences.F).toBe(3);
 });
 
+test("a completed subtask or task can be promoted while the other is still open", () => {
+  const openTask = {
+    active: true,
+    status: "" as const,
+    subtasks: [
+      { id: "ST-1", name: "API", description: "", active: true, status: "completed" as const, createdBy: "", createdAt: "", updatedAt: "" },
+      { id: "ST-2", name: "UI", description: "", active: true, status: "in-progress" as const, createdBy: "", createdAt: "", updatedAt: "" }
+    ]
+  };
+  expect(promotableSubtaskIds(openTask, ["ST-1", "ST-2"])).toEqual(["ST-1"]);
+  expect(promotableSubtaskIds({ ...openTask, status: "completed", subtasks: openTask.subtasks.map((item) => ({ ...item, status: "todo" as const })) }, ["ST-1"])).toEqual([]);
+  expect(promotableSubtaskIds({ ...openTask, subtasks: openTask.subtasks.map((item) => ({ ...item, status: "todo" as const })) }, ["ST-1"])).toBeNull();
+
+  const ready = parseCatalog(JSON.stringify({
+    features: [{
+      id: "F-1",
+      name: "SMS",
+      tasks: [{
+        id: "T-1",
+        name: "Setup",
+        subtasks: [
+          { id: "ST-1", name: "API", status: "completed" },
+          { id: "ST-2", name: "UI", status: "in-progress" }
+        ]
+      }]
+    }]
+  }));
+  expect(isReadyToPromote(ready, { featureId: "F-1", taskId: "T-1", subtaskId: "ST-1" })).toBe(true);
+  expect(isReadyToPromote(ready, { featureId: "F-1", taskId: "T-1", subtaskId: "ST-2" })).toBe(false);
+  expect(isReadyToPromote(ready, { featureId: "F-1", taskId: "T-1", subtaskId: null })).toBe(false);
+  const taskDone = parseCatalog(JSON.stringify({
+    features: [{
+      id: "F-1",
+      name: "SMS",
+      tasks: [{ id: "T-1", name: "Setup", status: "completed", subtasks: [] }]
+    }]
+  }));
+  expect(isReadyToPromote(taskDone, { featureId: "F-1", taskId: "T-1", subtaskId: null })).toBe(true);
+});
+
 test("parseGitLog groups commits that share a parent feature", () => {
   const raw = [
     ["aaa111", "aaa", "Ada", "2026-10-01T00:00:00Z", "feat: api", "Feature: PAY-142\nTask: PAY-150\nSubtask: PAY-188"].join("\x1f"),
@@ -420,7 +460,7 @@ test("planPromotion lists oldest commits first and skips ones already on the tar
   }
   expect(plan.pending.map((commit) => commit.sha)).toEqual(["newer"]);
   expect(plan.already.map((commit) => commit.sha)).toEqual(["older"]);
-  expect(environmentsForFeature("PAY-142", manifest, "dev")).toEqual(["DEV", "QAS"]);
+  expect(environmentsForFeature("PAY-142", manifest)).toEqual(["QAS"]);
 });
 
 test("withBranchNames keeps promoted commits and rejects a shared branch", () => {
@@ -438,6 +478,7 @@ test("withBranchNames keeps promoted commits and rejects a shared branch", () =>
     return;
   }
   expect(renamed.manifest.devBranch).toBe("develop");
+  expect(renamed.manifest.environments.DEV.branch).toBe("develop");
   expect(renamed.manifest.environments.QAS.branch).toBe("release/qas");
   expect(renamed.manifest.environments.QAS.features["F-2"]?.commits[0]?.source).toBe("abc");
 
@@ -489,6 +530,7 @@ test("recordPrepared stores the branch without marking the feature as already pr
     baseSha: "abc123def"
   });
   expect(next.environments.QAS.features["F-2"]?.commits).toEqual([{ source: "abc", promoted: "def" }]);
+  expect(next.environments.DEV.features).toEqual({});
   const parsed = parseManifest(JSON.stringify(next));
   expect(parsed.prepared.DEV?.["F-2"]?.baseSha).toBe("abc123def");
   const renamed = withBranchNames(next, { DEV: "develop", QAS: "qas", UAT: "uat", PROD: "main" });
@@ -498,6 +540,56 @@ test("recordPrepared stores the branch without marking the feature as already pr
   }
   expect(renamed.manifest.prepared.DEV?.["F-2"]?.branch).toBe("promote/dev/F-2");
   expect(renamed.manifest.environments.QAS.features["F-2"]?.commits[0]?.source).toBe("abc");
+});
+
+test("a selected subtask moves without the rest of the feature", () => {
+  const nodes = promotionNodes(
+    [{ id: "F-2", tasks: [{ id: "T-1", subtasks: [{ id: "ST-1" }, { id: "ST-2" }] }, { id: "T-2", subtasks: [{ id: "ST-3" }] }] }],
+    [
+      { featureId: "F-2", taskId: "T-1", subtaskId: "ST-1" },
+      { featureId: "F-2", taskId: "T-1", subtaskId: "ST-2" },
+      { featureId: "F-2", taskId: "T-2", subtaskId: "ST-3" },
+      { featureId: "F-2", taskId: null, subtaskId: null }
+    ]
+  );
+  const selected = toggleSubtask(nodes, { featureIds: [], taskIds: [], subtaskIds: [] }, "ST-1");
+  expect(selected).toEqual({ featureIds: [], taskIds: [], subtaskIds: ["ST-1"] });
+  expect(selectionBranchName("dev", nodes, selected)).toBe("promote/dev/F-2/ST-1");
+  const whole = toggleFeature(nodes, { featureIds: [], taskIds: [], subtaskIds: [] }, "F-2");
+  expect(wholeFeatureSelection(nodes, whole)).toBe("F-2");
+  expect(selectionBranchName("dev", nodes, whole)).toBe("promote/dev/F-2");
+  const oneTask = toggleTask(nodes, { featureIds: [], taskIds: [], subtaskIds: [] }, "T-2");
+  expect(oneTask.taskIds).toEqual(["T-2"]);
+  expect(oneTask.subtaskIds).toEqual(["ST-3"]);
+  expect(selectionBranchName("qas", nodes, oneTask)).toBe("promote/qas/F-2/T-2");
+  const several = toggleSubtask(nodes, toggleSubtask(nodes, { featureIds: [], taskIds: [], subtaskIds: [] }, "ST-1"), "ST-3");
+  expect(selectionBranchName("dev", nodes, several)).toBe("promote/dev/F-2/partial");
+
+  const commits = [
+    { sha: "sub", featureId: "F-2", taskId: "T-1", subtaskId: "ST-1", subject: "one" },
+    { sha: "sib", featureId: "F-2", taskId: "T-1", subtaskId: "ST-2", subject: "two" },
+    { sha: "bare", featureId: "F-2", taskId: null, subtaskId: null, subject: "feature only" }
+  ];
+  expect(commits.filter((commit) => commitInSelection(commit, selected)).map((commit) => commit.sha)).toEqual(["sub"]);
+  expect(commits.filter((commit) => commitInSelection(commit, whole)).map((commit) => commit.sha)).toEqual(["sub", "sib", "bare"]);
+  const plan = planPromotion({
+    featureIds: whole.featureIds,
+    taskIds: whole.taskIds,
+    subtaskIds: whole.subtaskIds,
+    target: "QAS",
+    branch: "dev",
+    manifest: defaultManifest(),
+    commitsNewestFirst: [...commits].reverse()
+  });
+  expect(plan.ok).toBe(true);
+  if (!plan.ok) {
+    return;
+  }
+  expect(plan.pending.map((commit) => commit.sha)).toEqual(["sub", "sib", "bare"]);
+  expect(environmentPresence(["sub", "sib"], { QAS: ["sub"] })).toEqual({ on: [], partial: ["QAS"] });
+  expect(environmentPresence(["sub"], { DEV: ["sub"], QAS: ["sub"] })).toEqual({ on: ["DEV", "QAS"], partial: [] });
+  expect(environmentPresence(["sib"], { DEV: ["sub"], QAS: ["sub"] })).toEqual({ on: [], partial: [] });
+  expect(environmentPresence(["sub", "sib"], { DEV: ["sub"] })).toEqual({ on: [], partial: ["DEV"] });
 });
 
 test("planPromotion includes DEV and keeps the work branch as a valid source", () => {
@@ -518,6 +610,73 @@ test("planPromotion includes DEV and keeps the work branch as a valid source", (
   expect(plan.branch).toBe("dev");
   expect(plan.pending.map((commit) => commit.sha)).toEqual(["older", "newer"]);
   expect(plan.warnings.some((warning) => warning.code === "source-branch")).toBe(false);
+});
+
+test("a manifest without a DEV block loads an empty ledger on the dev branch", () => {
+  const parsed = parseManifest(JSON.stringify({
+    devBranch: "develop",
+    environments: {
+      QAS: { branch: "qas", features: {} },
+      UAT: { branch: "uat", features: {} },
+      PROD: { branch: "main", features: {} }
+    }
+  }));
+  expect(parsed.devBranch).toBe("develop");
+  expect(parsed.environments.DEV).toEqual({ branch: "develop", features: {} });
+});
+
+test("marking a plan records its pending commits once, and one subtask can be on DEV alone", () => {
+  const manifest = defaultManifest();
+  const before = JSON.stringify(manifest);
+  const commits = [
+    { sha: "sub", featureId: "F-2", taskId: "T-1", subtaskId: "ST-1", subject: "one" },
+    { sha: "sib", featureId: "F-2", taskId: "T-1", subtaskId: "ST-2", subject: "two" }
+  ];
+  const plan = planPromotion({
+    featureIds: [],
+    taskIds: [],
+    subtaskIds: ["ST-1"],
+    target: "DEV",
+    branch: "portfolio-revamp",
+    manifest,
+    commitsNewestFirst: [...commits].reverse()
+  });
+  expect(JSON.stringify(manifest)).toBe(before);
+  expect(plan.ok).toBe(true);
+  if (!plan.ok) {
+    return;
+  }
+  expect(plan.pending.map((commit) => commit.sha)).toEqual(["sub"]);
+  const marked = recordPromotion(manifest, plan.target, plan.pending);
+  expect(marked.environments.DEV.features["F-2"]?.commits).toEqual([{ source: "sub", promoted: "" }]);
+  expect(marked.environments.QAS.features).toEqual({});
+  const again = recordPromotion(marked, "DEV", plan.pending);
+  expect(again.environments.DEV.features["F-2"]?.commits).toEqual([{ source: "sub", promoted: "" }]);
+  expect(environmentPresence(["sub"], { DEV: ["sub"] })).toEqual({ on: ["DEV"], partial: [] });
+  expect(environmentPresence(["sib"], { DEV: ["sub"] })).toEqual({ on: [], partial: [] });
+  const next = planPromotion({
+    featureIds: [],
+    taskIds: [],
+    subtaskIds: ["ST-1", "ST-2"],
+    target: "DEV",
+    manifest: again,
+    commitsNewestFirst: [...commits].reverse()
+  });
+  expect(next.ok).toBe(true);
+  if (!next.ok) {
+    return;
+  }
+  expect(next.pending.map((commit) => commit.sha)).toEqual(["sib"]);
+  expect(next.already.map((commit) => commit.sha)).toEqual(["sub"]);
+  const prepared = recordPrepared(again, "DEV", "F-2", {
+    branch: "promote/dev/F-2/ST-2",
+    sourceBranch: "portfolio-revamp",
+    mode: "cherry-pick",
+    squash: false,
+    baseSha: "base"
+  });
+  expect(prepared.environments.DEV.features["F-2"]?.commits).toEqual([{ source: "sub", promoted: "" }]);
+  expect(prepared.prepared.DEV?.["F-2"]?.branch).toBe("promote/dev/F-2/ST-2");
 });
 
 test("squashCommitMessage marks the commit and lists each included commit", () => {
