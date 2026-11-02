@@ -7,6 +7,7 @@ import type { CommitRequest, CommitResult, PlanRequest, PrepareRequest, SavedPro
 import { CATALOG_PATH, FEATURES_DIR, LEGACY_CATALOG_PATH, canCompleteFeature, canCompleteTask, catalogFromFeatures, emptyCatalog, findFeature, findTask, isReadyToPromote, parseCatalog, parseFeatureFile, serializeFeature, setFeatureStatus, setSubtaskStatus, setTaskStatus, type Catalog } from "../../shared/catalog";
 import { completionCommitMessage, prepareCommit } from "../../shared/commit-message";
 import { groupByFeature, parseGitLog } from "../../shared/log";
+import { classifyOperation, continueRefusal, messageRefusal, type GitOperation } from "../../shared/operation";
 import {
   MANIFEST_PATH,
   LEGACY_MANIFEST_PATH,
@@ -249,6 +250,7 @@ function emptySnapshot(git: { available: boolean; version: string }, projects: S
     catalog: { exists: false, path: FEATURES_DIR, data: emptyCatalog(), error: "" },
     changes: [],
     features: [],
+    operation: null,
     error: error || (git.available ? "" : "Git is not available on PATH.")
   };
 }
@@ -297,6 +299,7 @@ export async function snapshot(): Promise<Snapshot> {
       catalog,
       changes,
       features,
+      operation: await readOperation(repoPath),
       error: ""
     };
   } catch (error) {
@@ -536,6 +539,9 @@ export async function createCommit(input: CommitRequest): Promise<CommitResult> 
   if (!current.repoPath) {
     throw new Error("Choose a repository first.");
   }
+  if (current.operation) {
+    throw new Error(`Finish or abort the current ${current.operation.kind} before starting another commit.`);
+  }
   const prepared = prepareCommit(input, current.catalog.data);
   if (!prepared.ok) {
     throw new Error(prepared.errors[0] ?? "The commit message is not valid.");
@@ -682,6 +688,9 @@ export async function preparePromotion(input: PrepareRequest): Promise<Snapshot>
   if (!current.repoPath) {
     throw new Error("Choose a repository first.");
   }
+  if (current.operation) {
+    throw new Error(`Finish or abort the current ${current.operation.kind} before preparing another promotion.`);
+  }
   const target = input.target;
   if (target !== "DEV" && target !== "QAS" && target !== "UAT" && target !== "PROD") {
     throw new Error("Choose DEV, QAS, UAT, or PROD.");
@@ -783,32 +792,18 @@ export async function preparePromotion(input: PrepareRequest): Promise<Snapshot>
     const message = error instanceof Error ? error.message : "Git failed.";
     const merging = await refExists(repoPath, "MERGE_HEAD");
     const picking = await refExists(repoPath, "CHERRY_PICK_HEAD");
-    if (picking) {
-      const files = await conflictFiles(repoPath);
-      try {
-        await runGit(repoPath, ["cherry-pick", "--abort"]);
-      } catch {
-        // The cherry-pick had already stopped.
-      }
-      const detail = files.length > 0 ? ` Conflicted files: ${files.join(", ")}.` : "";
-      throw new Error(`${guard.branch} stopped at its base.${detail} ${message}`.trim());
+    if (picking || merging) {
+      return snapshot();
     }
     if (squashing) {
       const files = await conflictFiles(repoPath);
+      if (files.length > 0) {
+        return snapshot();
+      }
       try {
         await runGit(repoPath, ["reset", "--merge"]);
       } catch {
         // The squash could not be cleared.
-      }
-      const detail = files.length > 0 ? ` Conflicted files: ${files.join(", ")}.` : "";
-      throw new Error(`${guard.branch} stopped at its base.${detail} ${message}`.trim());
-    }
-    if (merging) {
-      const files = await conflictFiles(repoPath);
-      try {
-        await runGit(repoPath, ["merge", "--abort"]);
-      } catch {
-        // The merge had already stopped.
       }
       const detail = files.length > 0 ? ` Conflicted files: ${files.join(", ")}.` : "";
       throw new Error(`${guard.branch} stopped at its base.${detail} ${message}`.trim());
@@ -823,6 +818,73 @@ export async function preparePromotion(input: PrepareRequest): Promise<Snapshot>
     }
     throw new Error(`${guard.branch} was created. ${message}`);
   }
+}
+
+export async function continueOperation(): Promise<Snapshot> {
+  const current = await requireOperation();
+  const refusal = continueRefusal(current.operation);
+  if (refusal) {
+    throw new Error(refusal);
+  }
+  await runGit(current.repoPath!, ["commit", "--no-edit", "--no-verify"]);
+  return snapshot();
+}
+
+export async function skipOperation(): Promise<Snapshot> {
+  const current = await requireOperation();
+  if (current.operation?.kind !== "cherry-pick") {
+    throw new Error("Skip is only available during a cherry-pick.");
+  }
+  await runGit(current.repoPath!, ["cherry-pick", "--skip"]);
+  return snapshot();
+}
+
+export async function abortOperation(): Promise<Snapshot> {
+  const current = await requireOperation();
+  const kind = current.operation?.kind;
+  const args = kind === "cherry-pick"
+    ? ["cherry-pick", "--abort"]
+    : kind === "merge"
+      ? ["merge", "--abort"]
+      : kind === "rebase"
+        ? ["rebase", "--abort"]
+        : kind === "revert"
+          ? ["revert", "--abort"]
+          : ["reset", "--merge"];
+  await runGit(current.repoPath!, args);
+  return snapshot();
+}
+
+export async function commitOperation(input: CommitRequest): Promise<Snapshot> {
+  const current = await requireOperation();
+  const refusal = messageRefusal(current.operation);
+  if (refusal) {
+    throw new Error(refusal);
+  }
+  const prepared = prepareCommit(input, current.catalog.data, { allowCompleted: true });
+  if (!prepared.ok) {
+    throw new Error(prepared.errors[0] ?? "The commit message is not valid.");
+  }
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "feature-release-"));
+  const messageFile = path.join(directory, "COMMIT_MSG");
+  try {
+    await fs.writeFile(messageFile, prepared.message.replace(/\r\n/g, "\n"));
+    await runGit(current.repoPath!, ["commit", "-F", messageFile, "--no-verify"]);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+  return snapshot();
+}
+
+async function requireOperation(): Promise<Snapshot> {
+  const current = await snapshot();
+  if (!current.repoPath) {
+    throw new Error("Choose a repository first.");
+  }
+  if (!current.operation) {
+    throw new Error("No cherry-pick or merge is in progress.");
+  }
+  return current;
 }
 
 export async function listBranches(): Promise<{ ok: true; branches: string[] }> {
@@ -936,6 +998,58 @@ async function commitsOn(repoPath: string, branch: string) {
       return [];
     }
     throw error;
+  }
+}
+
+async function readOperation(repoPath: string): Promise<GitOperation | null> {
+  const [cherryPick, merge, revert, rebase] = await Promise.all([
+    refExists(repoPath, "CHERRY_PICK_HEAD"),
+    refExists(repoPath, "MERGE_HEAD"),
+    refExists(repoPath, "REVERT_HEAD"),
+    rebaseInProgress(repoPath)
+  ]);
+  const conflicted = await conflictFiles(repoPath);
+  const subjectRef = cherryPick ? "CHERRY_PICK_HEAD" : merge ? "MERGE_HEAD" : revert ? "REVERT_HEAD" : "";
+  const subject = subjectRef ? await commitSubject(repoPath, subjectRef) : "";
+  const remaining = cherryPick ? await sequencerRemaining(repoPath) : 0;
+  return classifyOperation({ cherryPick, merge, revert, rebase, conflicted, subject, remaining });
+}
+
+async function rebaseInProgress(repoPath: string): Promise<boolean> {
+  const [merging, applying] = await Promise.all([
+    gitPathExists(repoPath, "rebase-merge"),
+    gitPathExists(repoPath, "rebase-apply")
+  ]);
+  return merging || applying;
+}
+
+async function gitPathExists(repoPath: string, name: string): Promise<boolean> {
+  try {
+    const relative = (await runGit(repoPath, ["rev-parse", "--git-path", name])).trim();
+    const full = path.isAbsolute(relative) ? relative : path.join(repoPath, relative);
+    await fs.access(full);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function commitSubject(repoPath: string, ref: string): Promise<string> {
+  try {
+    return (await runGit(repoPath, ["log", "-1", "--format=%s", ref])).trim();
+  } catch {
+    return "";
+  }
+}
+
+async function sequencerRemaining(repoPath: string): Promise<number> {
+  try {
+    const relative = (await runGit(repoPath, ["rev-parse", "--git-path", "sequencer/todo"])).trim();
+    const full = path.isAbsolute(relative) ? relative : path.join(repoPath, relative);
+    const text = await fs.readFile(full, "utf8");
+    return text.split(/\r?\n/).filter((line) => line.trim() && !line.trim().startsWith("#")).length;
+  } catch {
+    return 0;
   }
 }
 

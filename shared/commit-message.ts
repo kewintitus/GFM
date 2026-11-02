@@ -25,7 +25,7 @@ export interface PreparedCommit {
 
 export { isTicket, normalizeTicket } from "./ticket";
 
-export function prepareCommit(input: CommitDraft | undefined, catalog?: Catalog): PreparedCommit {
+export function prepareCommit(input: CommitDraft | undefined, catalog?: Catalog, options?: { allowCompleted?: boolean }): PreparedCommit {
   const type = String(input?.type ?? "").trim();
   const summary = String(input?.summary ?? "").trim().replace(/\s+/g, " ");
   const featureId = normalizeTicket(input?.featureId);
@@ -86,7 +86,7 @@ export function prepareCommit(input: CommitDraft | undefined, catalog?: Catalog)
   if (subtask && !subtask.active) {
     errors.push("That subtask is inactive.");
   }
-  if (subtask?.status === "completed") {
+  if (subtask?.status === "completed" && !options?.allowCompleted) {
     errors.push("That subtask is completed.");
   }
   if (task?.commitType && type !== task.commitType) {

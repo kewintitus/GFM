@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { join } from "node:path";
-import { buildPlan, chooseRepo, createCommit, createManifest, createWorkBranch, installHook, listBranches, markPromoted, openProject, preparePromotion, removeHook, removeProject, saveCatalog, saveEnvironmentBranches, setStaged, snapshot } from "./service";
+import { abortOperation, buildPlan, chooseRepo, commitOperation, continueOperation, createCommit, createManifest, createWorkBranch, installHook, listBranches, markPromoted, openProject, preparePromotion, removeHook, removeProject, saveCatalog, saveEnvironmentBranches, setStaged, skipOperation, snapshot } from "./service";
 import type { Catalog } from "../../shared/catalog";
 import type { CommitRequest, PlanRequest, PrepareRequest, WorkBranchRequest } from "../../shared/api";
 import type { BranchNames } from "../../shared/manifest";
@@ -108,6 +108,10 @@ app.whenReady().then(() => {
   handle<PlanRequest>("promote:plan", (_event, input) => buildPlan(input));
   handle<PlanRequest>("promote:mark", (_event, input) => markPromoted(input));
   handle<PrepareRequest>("promote:prepare", (_event, input) => preparePromotion(input));
+  handle("conflict:continue", () => continueOperation());
+  handle("conflict:skip", () => skipOperation());
+  handle("conflict:abort", () => abortOperation());
+  handle<CommitRequest>("conflict:commit", (_event, input) => commitOperation(input));
   handle("repo:branches", () => listBranches());
   handle<WorkBranchRequest>("branch:create", (_event, input) => createWorkBranch(input));
 

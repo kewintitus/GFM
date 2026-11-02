@@ -87,3 +87,13 @@ export function IconSidebar() {
     </svg>
   );
 }
+
+export function IconConflicts() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 4.5 20 19H4z" />
+      <path d="M12 10v4.5" />
+      <circle cx="12" cy="16.8" r="0.6" />
+    </svg>
+  );
+}

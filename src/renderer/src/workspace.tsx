@@ -2,9 +2,10 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import type { Canceled, CommitRequest, IpcFailure, PlanRequest, PrepareRequest, PromotionPlan, Snapshot, WorkBranchRequest } from "@shared/api";
 import type { Catalog } from "@shared/catalog";
 import type { BranchNames } from "@shared/manifest";
+import { operationLabel } from "@shared/operation";
 
 export type Role = "contributor" | "release";
-export type View = "commit" | "catalog" | "features" | "environments" | "promote";
+export type View = "commit" | "catalog" | "features" | "environments" | "promote" | "conflicts";
 
 interface WorkspaceValue {
   snapshot: Snapshot | null;
@@ -31,6 +32,10 @@ interface WorkspaceValue {
   buildPlan: (input: PlanRequest) => Promise<PromotionPlan | null>;
   markPromoted: (input: PlanRequest) => Promise<PromotionPlan | null>;
   preparePromotion: (input: PrepareRequest) => Promise<boolean>;
+  continueOperation: () => Promise<void>;
+  skipOperation: () => Promise<void>;
+  abortOperation: () => Promise<void>;
+  commitOperation: (input: CommitRequest) => Promise<boolean>;
   listBranches: () => Promise<string[]>;
   createWorkBranch: (input: WorkBranchRequest) => Promise<string>;
 }
@@ -294,10 +299,55 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           return false;
         }
         apply(result);
+        if (result.operation) {
+          setView("conflicts");
+          setNotice("A conflict is waiting. Resolve it on Conflicts.");
+          return false;
+        }
         setNotice(`Prepared ${result.branch}.`);
         return true;
       });
       return prepared ?? false;
+    },
+    continueOperation: () => run(async () => {
+      const result = await window.featureRelease!.continueOperation();
+      if (isFailure(result)) {
+        setError(result.error);
+        return;
+      }
+      apply(result);
+      setNotice(result.operation ? `${operationLabel(result.operation.kind)} is still in progress.` : "The sequence is finished.");
+    }),
+    skipOperation: () => run(async () => {
+      const result = await window.featureRelease!.skipOperation();
+      if (isFailure(result)) {
+        setError(result.error);
+        return;
+      }
+      apply(result);
+      setNotice(result.operation ? `${operationLabel(result.operation.kind)} is still in progress.` : "The sequence is finished.");
+    }),
+    abortOperation: () => run(async () => {
+      const result = await window.featureRelease!.abortOperation();
+      if (isFailure(result)) {
+        setError(result.error);
+        return;
+      }
+      apply(result);
+      setNotice(result.operation ? `${operationLabel(result.operation.kind)} is still in progress.` : "The operation was aborted.");
+    }),
+    commitOperation: async (input) => {
+      const saved = await run(async () => {
+        const result = await window.featureRelease!.commitOperation(input);
+        if (isFailure(result)) {
+          setError(result.error);
+          return false;
+        }
+        apply(result);
+        setNotice(result.operation ? `${operationLabel(result.operation.kind)} is still in progress.` : "The sequence is finished.");
+        return true;
+      });
+      return saved ?? false;
     },
     listBranches: async () => {
       const result = await window.featureRelease!.listBranches();

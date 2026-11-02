@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
-import { IconCatalog, IconCommit, IconEnvironments, IconFeatures, IconFolder, IconPromote, IconRefresh, IconSidebar, Mark } from "./icons";
+import { IconCatalog, IconCommit, IconConflicts, IconEnvironments, IconFeatures, IconFolder, IconPromote, IconRefresh, IconSidebar, Mark } from "./icons";
 import { useWorkspace, type View } from "./workspace";
 import { applyTheme, readTheme, type ThemeName } from "./theme";
 import { CatalogView } from "./views/CatalogView";
@@ -8,13 +8,15 @@ import { CommitView } from "./views/CommitView";
 import { EnvironmentsView } from "./views/EnvironmentsView";
 import { FeaturesView } from "./views/FeaturesView";
 import { PromoteView } from "./views/PromoteView";
+import { ConflictsView } from "./views/ConflictsView";
 
 const NAV: { id: View; label: string; icon: ReactElement }[] = [
   { id: "commit", label: "Commit", icon: <IconCommit /> },
   { id: "catalog", label: "Catalog", icon: <IconCatalog /> },
   { id: "features", label: "Features", icon: <IconFeatures /> },
   { id: "environments", label: "Environments", icon: <IconEnvironments /> },
-  { id: "promote", label: "Promote", icon: <IconPromote /> }
+  { id: "promote", label: "Promote", icon: <IconPromote /> },
+  { id: "conflicts", label: "Conflicts", icon: <IconConflicts /> }
 ];
 
 const SIDEBAR_KEY = "gfm-sidebar";
@@ -50,6 +52,7 @@ export function App() {
               <div hidden={view !== "features"}><FeaturesView /></div>
               <div hidden={view !== "environments"}><EnvironmentsView /></div>
               <div hidden={view !== "promote"}><PromoteView /></div>
+              <div hidden={view !== "conflicts"}><ConflictsView /></div>
             </>
           ) : null}
         </main>
@@ -100,6 +103,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
             <span>{item.label}</span>
             {item.id === "catalog" && defined > 0 ? <em>{defined}</em> : null}
             {item.id === "features" && tagged > 0 ? <em>{tagged}</em> : null}
+            {item.id === "conflicts" && (snapshot?.operation?.conflicted.length ?? 0) > 0 ? <em>{snapshot?.operation?.conflicted.length}</em> : null}
           </button>
         ))}
       </nav>

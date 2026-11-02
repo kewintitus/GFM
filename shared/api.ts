@@ -2,6 +2,7 @@ import type { Catalog, CatalogFile } from "./catalog";
 import type { CommitDraft } from "./commit-message";
 import type { EnvironmentName, Manifest, TargetEnvironment, BranchNames } from "./manifest";
 import type { FeatureGroupBase } from "./log";
+import type { GitOperation } from "./operation";
 import type { PromotionPlan } from "./plan";
 
 export type { PromotionPlan, TargetEnvironment };
@@ -37,6 +38,7 @@ export interface Snapshot {
   catalog: CatalogFile;
   changes: ChangeFile[];
   features: FeatureGroup[];
+  operation: GitOperation | null;
   error: string;
 }
 
@@ -113,6 +115,10 @@ export interface FeatureReleaseApi {
   planPromotion: (input: PlanRequest) => Promise<PromotionPlan | IpcFailure>;
   markPromoted: (input: PlanRequest) => Promise<Snapshot | IpcFailure>;
   preparePromotion: (input: PrepareRequest) => Promise<Snapshot | IpcFailure>;
+  continueOperation: () => Promise<Snapshot | IpcFailure>;
+  skipOperation: () => Promise<Snapshot | IpcFailure>;
+  abortOperation: () => Promise<Snapshot | IpcFailure>;
+  commitOperation: (input: CommitRequest) => Promise<Snapshot | IpcFailure>;
   listBranches: () => Promise<BranchList | IpcFailure>;
   createWorkBranch: (input: WorkBranchRequest) => Promise<Snapshot | IpcFailure>;
 }

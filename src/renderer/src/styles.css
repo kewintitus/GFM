@@ -1576,6 +1576,30 @@ input[type="checkbox"] {
 .plan-list li span { color: var(--brass); font-family: var(--mono); font-size: 12px; }
 .plan-list li em { font-style: normal; }
 
+.conflict-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 18px;
+  align-items: start;
+}
+
+.conflict-main { display: grid; gap: 16px; }
+
+.conflict-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+}
+
+.conflict-card h2 { margin: 0; font-size: 18px; }
+
+@media (max-width: 980px) {
+  .conflict-layout { grid-template-columns: 1fr; }
+}
+
 .latest { margin: -6px 0 0; }
 
 .hero {

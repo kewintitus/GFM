@@ -19,6 +19,10 @@ const api: FeatureReleaseApi = {
   planPromotion: (input: PlanRequest) => ipcRenderer.invoke("promote:plan", input),
   markPromoted: (input: PlanRequest) => ipcRenderer.invoke("promote:mark", input),
   preparePromotion: (input: PrepareRequest) => ipcRenderer.invoke("promote:prepare", input),
+  continueOperation: () => ipcRenderer.invoke("conflict:continue"),
+  skipOperation: () => ipcRenderer.invoke("conflict:skip"),
+  abortOperation: () => ipcRenderer.invoke("conflict:abort"),
+  commitOperation: (input: CommitRequest) => ipcRenderer.invoke("conflict:commit"),
   listBranches: () => ipcRenderer.invoke("repo:branches"),
   createWorkBranch: (input: WorkBranchRequest) => ipcRenderer.invoke("branch:create", input)
 };
